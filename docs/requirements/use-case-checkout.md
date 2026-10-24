@@ -1,5 +1,11 @@
 # TASK 1.3 – ĐẶC TẢ USE CASE TRỌNG TÂM
 
+**Dự án:** BrewLite – Đặt và thanh toán đồ uống không dùng tiền mặt  
+**Học phần:** Công nghệ Phần mềm – Trường Đại học Sài Gòn  
+**Use Case:** UC-18 – Đặt và thanh toán đơn hàng (Place Order and Checkout)  
+**Phiên bản:** 0.9 – Dự thảo kỹ thuật, chờ nhóm xác nhận các quyết định ở Mục 12  
+**Tài liệu liên quan:** `context-and-scope.md` (Task 1.1), `srs.md` (Task 1.2)  
+**Nguồn đề:** BrewLite gốc (mục 4, 5, 8–9, 12); Assignment 2 (mục 1.1, 3.3, 4.2).
 
 ## 1. Mục đích và phạm vi
 
@@ -7,7 +13,9 @@ UC-18 mô tả nghiệp vụ xuyên suốt từ lúc khách xác nhận giỏ h�
 
 **Mục tiêu nghiệp vụ:** tạo được đơn chính xác, không bán vượt tồn kho, không xử lý thanh toán trùng lặp, thể hiện đúng kết quả thanh toán và cộng điểm theo quy tắc khi đơn được thanh toán thành công.
 
-![Use Case Đặt và thanh toán đơn hàng](../diagrams/use-case-checkout.drawio.png)
+**Tệp nguồn (PlantUML):** [use-case-checkout.puml](../diagrams/use-case-checkout.puml)
+
+![Use Case Đặt và thanh toán đơn hàng](../diagrams/use-case-checkout.png)
 
 ## 2. Thông tin đặc tả
 
@@ -139,3 +147,22 @@ UC-18 mô tả nghiệp vụ xuyên suốt từ lúc khách xác nhận giỏ h�
 ## 11. Giải thích sơ đồ UC-18
 
 Sơ đồ đặt UC-18 ở giữa System Boundary **BrewLite**; Customer liên kết với UC-18 và các thao tác tùy điều kiện có ý nghĩa ở cấp người dùng. Mock Payment Service là Actor ngoài, kết nối đến hành vi xử lý thanh toán mô phỏng. UC-18 `<<include>>` UC-06 (Tạo đơn) và UC-07 (Thanh toán giả lập), nhằm thể hiện phạm vi hợp thành; UC-06 `<<include>>` UC-16 (Kiểm tra tồn kho) và UC-07 `<<include>>` UC-17 (Kiểm soát thanh toán lặp). UC-11 Áp dụng mã khuyến mãi `<<extend>>` UC-18 tại điểm mở rộng “khách nhập mã”; không dùng mũi tên để mô tả thứ tự màn hình. Xác thực là tiền điều kiện tại M4, không ép UC-18 `include` Đăng nhập mỗi lần sử dụng. Chuyển trạng thái/loyalty được mô tả bằng quy tắc và luồng trong tài liệu, không biến mọi xử lý kỹ thuật thành actor độc lập.
+
+## 12. Quyết định đề xuất cần nhóm xác nhận trước khi khóa tài liệu
+
+| Chủ đề | Đề xuất để viết test/triển khai | Trạng thái |
+|---|---|---|
+| UC trọng tâm | Giữ `UC-18` là Use Case tổng hợp UC-06 và UC-07, không đổi mã SRS cũ. | Chờ nhóm duyệt |
+| Khuyến mãi | `BREW10` giảm 10% giá hàng, tối đa 30.000đ; không cho tổng âm; một mã/đơn. | Chờ nhóm duyệt |
+| Loyalty | 1 điểm/10.000đ thực trả, lấy phần nguyên; chỉ cộng một lần khi `PAID`. | Chờ nhóm duyệt |
+| Idempotency-Key | Duy nhất theo chủ tài khoản + thao tác thanh toán; cùng payload trả kết quả cũ, khác payload từ chối (đề xuất HTTP 409); lưu bằng ràng buộc DB. | Chờ nhóm duyệt |
+| Timeout/đối soát | Lưu trạng thái đang xử lý, tra cứu kết quả theo cùng key trước khi cho retry. | Chờ nhóm duyệt |
+| Chính sách tồn kho | Chốt rõ khi M5 cập nhật/giữ tồn và khi `PAYMENT_FAILED`, hủy hoặc timeout thì giải phóng/kiểm tra lại ra sao; bảo đảm không bán vượt tồn hoặc trừ tồn vĩnh viễn. | **Cần chốt trước khi code/test** |
+| Ghi Loyalty lỗi sau PAID | Có cơ chế thử lại idempotent (hoặc outbox) mà không tạo thêm thanh toán/điểm. | Chờ nhóm duyệt |
+| Điều kiện đo NFR | Giữ các đề xuất hiệu năng và viewport ở SRS Mục 8; UC-18 không tự thay ngưỡng NFR. | Chờ nhóm duyệt |
+
+**Điểm cần rà soát chéo:** SRS Mục 6 nói UC-18 “dành trước, chưa vẽ một oval độc lập” trong **sơ đồ tổng quát**; tài liệu Task 1.3 dùng UC-18 làm oval trung tâm trong **sơ đồ trọng tâm**, không mâu thuẫn. Bản Task 1.1 trên máy nếu đã khác bản lưu trước đây, cần so lại IS/EX/OS trước khi nhóm phê duyệt.
+
+## 13. Kết luận
+
+UC-18 bao quát happy path, luồng thay thế và các lỗi có thể kiểm thử theo Task 1.3 Assignment 2, đồng thời truy vết được về FR/NFR và phạm vi Task 1.1. Những chính sách kỹ thuật chưa được hai đề quy định chi tiết được tách thành đề xuất ở Mục 12; tài liệu chỉ được khóa sau khi nhóm xác nhận các chính sách đó và rà soát sơ đồ/ảnh kết xuất thực tế.

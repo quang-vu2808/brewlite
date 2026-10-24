@@ -1,0 +1,35 @@
+@startuml
+' BrewLite Task 1.3 - converted from use-case-checkout.drawio
+left to right direction
+skinparam shadowing false
+skinparam packageStyle rectangle
+skinparam linetype ortho
+skinparam defaultFontName Arial
+skinparam usecase {
+ BackgroundColor White
+ BorderColor #42546B
+ ArrowColor #42546B
+}
+actor "Customer\n(ST-01)" as Customer
+actor "Mock Payment Service\n(ST-06)" as Mock
+rectangle "BrewLite – System Boundary" {
+  usecase "UC-18\nĐặt và thanh toán đơn hàng" as UC18
+  usecase "UC-06\nTạo đơn (FR-09)" as UC06
+  usecase "UC-07\nThanh toán mô phỏng (FR-10, FR-11)" as UC07
+  usecase "UC-16\nKiểm tra tồn kho (FR-17)" as UC16
+  usecase "UC-17\nChống lặp thanh toán (FR-16)" as UC17
+  usecase "UC-11\nÁp mã khuyến mãi (FR-18)" as UC11
+}
+Customer -- UC18
+Mock -- UC07
+UC18 ..> UC06 : <<include>>
+UC18 ..> UC07 : <<include>>
+UC06 ..> UC16 : <<include>>
+UC07 ..> UC17 : <<include>>
+UC11 ..> UC18 : <<extend>>\n[khách nhập mã]
+note bottom of UC18
+JWT là tiền điều kiện; State Machine (FR-15),
+Loyalty (FR-19) và transaction được đặc tả
+trong use-case-checkout.md, không phải actor riêng.
+end note
+@enduml

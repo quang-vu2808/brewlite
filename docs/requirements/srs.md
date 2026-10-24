@@ -1,5 +1,11 @@
 # TASK 1.2 – ĐẶC TẢ YÊU CẦU PHẦN MỀM (SRS RÚT GỌN)
 
+**Dự án:** BrewLite – Ứng dụng đặt và thanh toán đồ uống không dùng tiền mặt  
+**Học phần:** Công nghệ Phần mềm – Trường Đại học Sài Gòn  
+**Phiên bản:** 0.2 – Bản hiệu chỉnh, chờ nhóm phê duyệt  
+**Trạng thái:** Đã chuẩn hóa nội dung và định dạng; các quyết định ở Mục 8 là đề xuất, chưa được nhóm phê duyệt  
+**Tài liệu nền:** `docs/requirements/context-and-scope.md` (Task 1.1); BrewLite gốc, mục 3–5, 8–9, 12; Assignment 2, mục 1.1, 3.2, 4–7.
+
 ## 1. Giới thiệu
 
 Tài liệu xác định các yêu cầu chức năng (FR) và phi chức năng (NFR), mức ưu tiên MoSCoW và tiêu chí chấp nhận có thể kiểm chứng của BrewLite. Đây là cơ sở cho Use Case Diagram tổng quát, đặc tả Use Case trọng tâm, thiết kế, lập trình và kiểm thử. Một yêu cầu được xem là đáp ứng khi các tiêu chí chấp nhận tương ứng đạt trong môi trường thử nghiệm được mô tả. Mã FR/NFR trong tài liệu là mã **đề xuất của nhóm** (hai PDF không cấp sẵn bộ mã cố định).
@@ -69,10 +75,10 @@ Mỗi dòng AC là một tiêu chí kiểm chứng; các ngưỡng/quy tắc b�
 
 ## 6. Use Case Diagram tổng quát
 
-**Tệp nguồn:** `docs/diagrams/use-case.drawio`  
+**Tệp nguồn (PlantUML):** [use-case.puml](../diagrams/use-case.puml) (`docs/diagrams/use-case.puml`)  
 **Tệp kết xuất:** `docs/diagrams/use-case.png`  
 
-![Use Case Diagram tổng quát](../diagrams/use-case.drawio.png)  
+![Use Case Diagram tổng quát](../diagrams/use-case.png)  
 
 Sơ đồ bao gồm khách hàng và dịch vụ thanh toán mô phỏng là actor trực tiếp. Actor **Nhân viên quầy** chỉ tương tác với use case mở rộng giao diện nhân viên (nét đứt/nhãn Could). **Quản lý cửa hàng/PO, giảng viên và nhóm phát triển** là stakeholder ở Task 1.1, nhưng không mặc nhiên thành actor trong Use Case Diagram khách hàng vì họ không có tương tác trực tiếp đã xác định trong phạm vi MVP; nếu bổ sung giao diện quản trị, Quản lý mới thành actor liên quan.
 
@@ -122,3 +128,34 @@ Sơ đồ bao gồm khách hàng và dịch vụ thanh toán mô phỏng là act
 | FR-20–FR-22 | UC-13–UC-15 | Các mục Could, tách khỏi luồng MVP |
 | FR-23–FR-24 | Không vẽ | Won't: ngoài phạm vi bản bàn giao |
 | NFR-01–NFR-10 | Áp dụng ngang hệ thống | NFR được kiểm chứng bằng test, môi trường chạy và minh chứng; không cần mỗi NFR một oval |
+
+## 8. Các quyết định đề xuất, chờ nhóm phê duyệt
+
+Các giá trị bên dưới là **phương án đề xuất để có thể viết test**, không được coi là nhóm đã thống nhất. Nếu thay đổi, cần cập nhật lại tiêu chí chấp nhận, Task 1.1 (khi ảnh hưởng phạm vi), sơ đồ và ma trận truy vết.
+
+| Chủ đề | Phương án nhóm có thể chọn | Trạng thái |
+|---|---|---|
+| Quy tắc giảm giá FR-18 | Một mã áp dụng một lần cho một đơn; mã mẫu `BREW10` giảm 10% tiền hàng, tối đa 30.000đ; không làm tổng âm; mã sai/hết hiệu lực bị từ chối | Đề xuất, chờ duyệt |
+| Loyalty FR-19 | Cộng 1 điểm/10.000đ thực trả (lấy phần nguyên) sau lần chuyển sang `PAID` đầu tiên; không cộng lại với một đơn | Đề xuất, chờ duyệt |
+| Idempotency FR-16 | Ràng buộc key theo người dùng + thao tác thanh toán; cùng key và cùng payload trả lại cùng kết quả; cùng key nhưng khác payload bị từ chối (ví dụ HTTP 409); lưu kết quả giao dịch trong cơ sở dữ liệu | Đề xuất, chờ duyệt |
+| Hiệu năng NFR-01 | Dùng seed cố định; kiểm tra các endpoint chính khi chạy local, 30 lượt/endpoint sau 5 lượt warm-up, mỗi lượt dưới 500 ms theo phép đo phía client; lưu môi trường và kết quả | Đề xuất phương pháp đo, ngưỡng 500 ms lấy từ đề gốc |
+| Giao diện NFR-05 | Kiểm tra viewport 390 × 844 px và 1366 × 768 px; Chrome và Edge phiên bản sẵn có; không bị cắt thao tác cốt lõi | Đề xuất, chờ duyệt |
+| Mã UC trọng tâm | Dành `UC-18 – Đặt và thanh toán đơn hàng` cho Task 1.3, không đổi UC-01…UC-17 | Đề xuất, chờ duyệt |
+| Trạng thái đơn và nhân viên | Backend có State Machine và cơ chế kiểm thử; giao diện Barista riêng chỉ là EX-01/FR-20 Could | Phù hợp bản Task 1.1 đang có, chờ nhóm duyệt |
+
+**Lưu ý về đề gốc:** Không có công thức chiết khấu, mức tích điểm, thời hạn lưu Idempotency-Key, cấu hình máy đo hiệu năng hoặc danh sách trình duyệt cụ thể được ấn định trong hai PDF. Vì vậy các giá trị trên không phải trích nguyên văn từ đề.
+
+### Các điểm kiểm tra trước khi khóa phiên bản
+
+
+1. Xác nhận bản `context-and-scope.md` trên máy vẫn dùng IS-01–IS-10, EX-01–EX-03 và OS-01–OS-05 như bản Task 1.1 đã lưu trước đây; bản trên máy có thể đã thay đổi và cần được ưu tiên đối chiếu lại.
+2. Xác nhận cách tạo/cập nhật trạng thái đơn để demo và kiểm thử **không yêu cầu giao diện Barista riêng** trong MVP; vẫn phải đáp ứng nghiệp vụ State Machine.
+3. Chốt quy tắc giảm giá (kiểu mã, giới hạn, cách tính) và tỷ lệ cộng Loyalty; đề gốc bắt buộc chức năng nhưng không ấn định công thức.
+4. Chốt cách nhận diện yêu cầu thanh toán lặp (phạm vi lưu `Idempotency-Key`, cùng/nội dung khác), cùng kịch bản test đồng thời.
+5. Chốt các giá trị trong bảng đề xuất để điều kiện đo NFR-01, NFR-05 lặp lại được.
+6. Xác nhận FR-20–FR-22 chỉ là Could, không lấn át các yêu cầu Must. Không thêm giao dịch tiền thật hoặc giao hàng vào MVP.
+7. Thống nhất UC-18 là mã dành riêng cho Use Case trọng tâm ở Task 1.3; chưa thực hiện Task 1.3 trong tài liệu này.
+
+## 9. Kết luận
+
+SRS này bao quát luồng MVP và những yêu cầu nghiệp vụ Backend theo đề gốc, đồng thời giữ rõ ranh giới với phần mở rộng/ngoài phạm vi từ Task 1.1. Sau khi nhóm rà soát các quyết định ở Mục 8, lưu phiên bản đã duyệt cùng sơ đồ nguồn và ảnh kết xuất lên nhánh làm việc; chưa cần tạo Pull Request cho riêng Task 1.2. Bước kế tiếp (chỉ khi được yêu cầu) là Task 1.3 – đặc tả một Use Case trọng tâm.
