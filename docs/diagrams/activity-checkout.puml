@@ -1,0 +1,112 @@
+@startuml
+title BrewLite - Activity Diagram: Dat hang va thanh toan (UC-18)
+skinparam shadowing false
+skinparam backgroundColor white
+skinparam defaultFontSize 16
+skinparam activity {
+  BackgroundColor #F8FAFC
+  BorderColor #42546B
+  DiamondBackgroundColor #FFF4CC
+  DiamondBorderColor #B08900
+  StartColor #2E7D32
+  EndColor #B3261E
+  FontName Arial
+}
+
+|Customer|
+start
+:Mo gio hang;
+:Xac nhan gio hang;
+
+|Next.js UI|
+:Gui yeu cau checkout;
+
+|NestJS API|
+:Validate gio hang va tinh lai gia;
+if (Gio hang hop le?) then (Co)
+else (Khong)
+  :Tra loi loi validation;
+  |Next.js UI|
+  :Hien thi loi, giu gio hang;
+  stop
+endif
+
+|Customer|
+:Nhap ma khuyen mai neu co;
+|NestJS API|
+:Kiem tra ma va tinh lai tong neu hop le;
+
+|NestJS API|
+if (JWT hop le?) then (Co)
+else (Khong)
+  |Next.js UI|
+  :Yeu cau dang nhap;
+  |Customer|
+  if (Dang nhap thanh cong?) then (Co)
+    |Next.js UI|
+    :Gui lai checkout voi JWT moi;
+    |NestJS API|
+  else (Huy / that bai)
+    :Dung checkout, khong tao don;
+    stop
+  endif
+endif
+
+|NestJS API|
+:Bat dau transaction tao don;
+|Database|
+:Kiem tra ton kho va optimistic lock;
+if (Con du ton kho?) then (Co)
+  |Database|
+  :Tao Order PENDING va OrderItems;
+  :Cap nhat ton kho trong transaction;
+  :Commit transaction;
+else (Khong)
+  |Database|
+  :Rollback transaction;
+  |Next.js UI|
+  :Thong bao het hang, giu gio de dieu chinh;
+  stop
+endif
+
+|Customer|
+:Chon Vi hoac The mo phong;
+:Xac nhan thanh toan;
+
+|Next.js UI|
+:Gui payment request va Idempotency-Key;
+
+|NestJS API|
+:Xac thuc quyen so huu don,\ntrang thai va payload;
+if (Key da duoc xu ly?) then (Co)
+  if (Payload trung khop?) then (Co)
+    :Tra lai ket qua da ghi;
+  else (Khong)
+    :Tu choi xung dot key/payload;
+    |Next.js UI|
+    :Hien thi loi xung dot;
+    stop
+  endif
+else (Chua)
+  :Ghi nhan key dang xu ly;
+  |Mock Payment Service|
+  :Mo phong thanh toan;
+  if (Ket qua thanh toan?) then (Thanh cong)
+    |NestJS API|
+    :Ghi Payment va chuyen Order sang PAID;
+    :Ghi Loyalty idempotent;
+  else (That bai)
+    |NestJS API|
+    :Ghi Payment that bai;\nchuyen Order sang PAYMENT_FAILED;
+  endif
+endif
+
+|Next.js UI|
+if (Trang thai cuoi?) then (PAID)
+  :Thong bao thanh cong va ma don;
+  :Xoa gio hang;
+else (That bai)
+  :Thong bao loi, giu gio hang;
+endif
+stop
+@enduml
