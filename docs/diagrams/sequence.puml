@@ -1,0 +1,68 @@
+@startuml
+title Task 2.2 - Sequence Diagram: UC-18 Đặt và thanh toán đơn hàng
+autonumber
+actor Customer
+participant "Next.js UI" as UI
+participant "NestJS API" as API
+database PostgreSQL as DB
+participant "Mock Payment" as Pay
+Customer -> UI: Checkout()
+UI -> API: POST /orders
+API -> API: Kiểm JWT, validate DTO / giá
+alt Chưa đăng nhập / JWT sai
+  API --> UI: 401 Unauthorized
+  UI --> Customer: Yêu cầu đăng nhập
+  Customer -> UI: Đăng nhập
+  UI -> API: POST /auth/login
+  API --> UI: 200 + JWT
+  UI -> API: POST /orders (JWT hợp lệ)
+end
+API -> DB: Đọc Product / Promotion
+DB --> API: Giá / điều kiện áp dụng
+group Tạo đơn: transaction + optimistic locking
+  API -> DB: BEGIN
+  API -> DB: Kiểm tồn / version
+  alt Hết hàng hoặc xung đột version
+    API -> DB: ROLLBACK
+    API --> UI: Báo hết hàng / giữ giỏ
+    UI --> Customer: Điều chỉnh giỏ
+  else Đủ hàng
+    API -> DB: UPDATE stock, INSERT OrderItem
+    API -> DB: INSERT Order(PENDING); COMMIT
+    DB --> API: Commit thành công
+    API --> UI: 201: orderId, PENDING
+  end
+end
+opt Đơn PENDING đã tạo
+  Customer -> UI: Chọn phương thức Ví / Thẻ
+  Customer -> UI: Xác nhận thanh toán
+  UI -> API: POST /payments (Idempotency-Key)
+  API -> API: Kiểm quyền, tiền, trạng thái
+  API -> DB: Tra Idempotency-Key
+  alt Cùng key đã xử lý
+    DB --> API: Trả kết quả đã lưu
+    API --> UI: Kết quả cũ / lỗi 409 nếu payload khác
+  else Key mới, hợp lệ
+    API -> Pay: Pay(amount, method, key)
+    alt Thanh toán thành công
+      Pay --> API: Success
+      API -> DB: Ghi Payment / PAID
+      API -> DB: Ghi Loyalty một lần
+      API -> DB: COMMIT
+      API --> UI: orderId / PAID
+      UI --> Customer: Hiện xác nhận đơn
+    else Thanh toán thất bại
+      Pay --> API: Failed
+      API -> DB: Lưu PAYMENT_FAILED
+      API --> UI: Báo thanh toán thất bại
+      UI --> Customer: Giữ giỏ / cho thử lại
+    end
+  end
+end
+note over UI,Pay
+  Gửi lại cùng key + payload: trả kết quả cũ.
+  Thanh toán mới sau FAILED: dùng key mới trên cùng Order.
+  Nếu timeout / chưa rõ kết quả: đối soát key cũ,
+  không tự đánh dấu PAID.
+end note
+@enduml

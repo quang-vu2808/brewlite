@@ -1,0 +1,71 @@
+@startuml
+title Task 2.1 - Activity Diagram: Đặt và thanh toán BrewLite
+|Khách hàng|
+start
+:Mở ứng dụng BrewLite;
+|Hệ thống BrewLite|
+:Hiển thị danh sách đồ uống;
+repeat
+  |Khách hàng|
+  :Chọn sản phẩm, size, topping;
+  |Hệ thống BrewLite|
+  :Tính giá theo tùy chọn;
+  |Khách hàng|
+  :Thêm sản phẩm vào giỏ;
+  |Hệ thống BrewLite|
+  :Cập nhật giỏ và tổng tiền;
+repeat while (Mua thêm?) is (Có) not (Không)
+|Khách hàng|
+:Xem giỏ, nhấn Đặt hàng;
+|Hệ thống BrewLite|
+:Kiểm tra giỏ và tổng tiền;
+if (Đã đăng nhập?) then (Không)
+  repeat
+    |Khách hàng|
+    :Đăng nhập / đăng ký;
+    |Hệ thống BrewLite|
+    :Xác thực và cấp JWT;
+  repeat while (Xác thực hợp lệ?) is (Không) not (Có)
+else (Có)
+endif
+:Kiểm tra giá, khuyến mãi (nếu có);
+repeat
+  :Kiểm tra tồn kho trong transaction;
+  if (Đủ hàng?) then (Có)
+    :Tạo đơn PENDING;
+    :Cập nhật tồn kho;
+  else (Không)
+    :Báo hết hàng; không tạo đơn;
+    |Khách hàng|
+    :Điều chỉnh giỏ hàng;
+    |Hệ thống BrewLite|
+    :Kiểm tra lại giá / khuyến mãi;
+  endif
+repeat while (Đủ hàng?) is (Không) not (Có)
+|Khách hàng|
+:Chọn Ví / Thẻ và xác nhận;
+repeat
+  |Hệ thống BrewLite|
+  :Gửi yêu cầu thanh toán\n(Idempotency-Key);
+  |Mock Payment Service|
+  :Xử lý thanh toán mô phỏng;
+  if (Thanh toán thành công?) then (Có)
+    |Hệ thống BrewLite|
+    :Cập nhật PAID; cộng điểm thưởng một lần;
+    |Khách hàng|
+    :Hiển thị mã đơn và xác nhận;
+    |Hệ thống BrewLite|
+    :Hiển thị trạng thái, lịch sử đơn;
+    |Khách hàng|
+    stop
+  else (Không)
+    |Hệ thống BrewLite|
+    :Cập nhật PAYMENT_FAILED; giữ giỏ;
+  endif
+repeat while (Thử lại?) is (Có - key mới) not (Không)
+stop
+note right
+  Retry sau PAYMENT_FAILED dùng key mới.
+  Cùng key + cùng payload trả kết quả cũ.
+end note
+@enduml

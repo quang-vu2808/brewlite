@@ -1,3 +1,4 @@
+
 # TASK 1.3 – ĐẶC TẢ USE CASE TRỌNG TÂM
 
 **Dự án:** BrewLite – Đặt và thanh toán đồ uống không dùng tiền mặt  
@@ -16,6 +17,7 @@ UC-18 mô tả nghiệp vụ xuyên suốt từ lúc khách xác nhận giỏ h�
 **Tệp nguồn (PlantUML):** [use-case-checkout.puml](../diagrams/use-case-checkout.puml)
 
 ![Use Case Đặt và thanh toán đơn hàng](../diagrams/use-case-checkout.png)
+
 
 ## 2. Thông tin đặc tả
 
@@ -166,3 +168,4 @@ Sơ đồ đặt UC-18 ở giữa System Boundary **BrewLite**; Customer liên k
 ## 13. Kết luận
 
 UC-18 bao quát happy path, luồng thay thế và các lỗi có thể kiểm thử theo Task 1.3 Assignment 2, đồng thời truy vết được về FR/NFR và phạm vi Task 1.1. Những chính sách kỹ thuật chưa được hai đề quy định chi tiết được tách thành đề xuất ở Mục 12; tài liệu chỉ được khóa sau khi nhóm xác nhận các chính sách đó và rà soát sơ đồ/ảnh kết xuất thực tế.
+

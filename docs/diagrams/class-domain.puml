@@ -1,0 +1,141 @@
+@startuml
+title BrewLite - Domain Class Diagram (UC-18)
+skinparam shadowing false
+skinparam backgroundColor white
+skinparam defaultFontSize 16
+skinparam classAttributeIconSize 0
+skinparam linetype ortho
+skinparam class {
+  BackgroundColor #F8FAFC
+  BorderColor #42546B
+  ArrowColor #42546B
+  FontName Arial
+}
+skinparam enum {
+  BackgroundColor #FFF4CC
+  BorderColor #B08900
+  FontName Arial
+}
+
+class User {
+  +id: UUID
+  +email: String
+  +passwordHash: String
+  +loyaltyPoints: int
+  +createdAt: DateTime
+}
+
+class Product {
+  +id: UUID
+  +name: String
+  +description: String
+  +basePrice: Decimal
+  +stockQuantity: int
+  +isAvailable: boolean
+}
+
+class Order {
+  +id: UUID
+  +userId: UUID
+  +status: OrderStatus
+  +subtotal: Decimal
+  +discountAmount: Decimal
+  +totalAmount: Decimal
+  +createdAt: DateTime
+}
+
+class OrderItem {
+  +id: UUID
+  +productId: UUID
+  +productNameSnapshot: String
+  +size: ProductSize
+  +toppings: String[*]
+  +quantity: int
+  +unitPrice: Decimal
+  +lineTotal: Decimal
+}
+
+class Payment {
+  +id: UUID
+  +orderId: UUID
+  +idempotencyKey: String
+  +payloadHash: String
+  +method: PaymentMethod
+  +status: PaymentStatus
+  +amount: Decimal
+  +mockTransactionId: String
+  +createdAt: DateTime
+}
+
+class Promotion {
+  +id: UUID
+  +code: String
+  +discountType: DiscountType
+  +discountValue: Decimal
+  +maxDiscount: Decimal
+  +startsAt: DateTime
+  +endsAt: DateTime
+  +isActive: boolean
+}
+
+class LoyaltyTransaction {
+  +id: UUID
+  +userId: UUID
+  +orderId: UUID
+  +pointsDelta: int
+  +createdAt: DateTime
+}
+
+enum OrderStatus {
+  PENDING
+  PAID
+  PAYMENT_FAILED
+  PREPARING
+  READY
+  COMPLETED
+  CANCELLED
+}
+
+enum PaymentStatus {
+  PROCESSING
+  SUCCEEDED
+  FAILED
+  UNKNOWN
+}
+
+enum PaymentMethod {
+  WALLET
+  CARD
+}
+
+enum ProductSize {
+  S
+  M
+  L
+}
+
+enum DiscountType {
+  PERCENTAGE
+  FIXED_AMOUNT
+}
+
+User "1" -- "0..*" Order : places
+Order "1" *-- "1..*" OrderItem : contains
+Product "1" -- "0..*" OrderItem : selected for
+Order "1" -- "0..*" Payment : payment attempts
+Promotion "0..1" -- "0..*" Order : applied to
+User "1" -- "0..*" LoyaltyTransaction : earns
+Order "1" -- "0..1" LoyaltyTransaction : awards once
+
+note right of Payment
+Same key + same payload replays
+the stored result; changed payload
+with the same key is rejected.
+end note
+note bottom of Order
+Successful: PENDING -> PAID -> PREPARING
+-> READY -> COMPLETED
+Failure: PENDING -> PAYMENT_FAILED
+Retry: PAYMENT_FAILED -> PENDING
+end note
+@enduml
