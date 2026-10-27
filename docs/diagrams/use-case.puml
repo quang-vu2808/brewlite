@@ -1,0 +1,59 @@
+@startuml
+' BrewLite Task 1.2 - source converted from use-case.drawio
+left to right direction
+skinparam shadowing false
+skinparam packageStyle rectangle
+skinparam linetype ortho
+skinparam defaultFontName Arial
+skinparam usecase {
+ BackgroundColor White
+ BorderColor #42546B
+ ArrowColor #42546B
+}
+actor "Khách hàng\n(ST-01)" as Customer
+actor "Mock Payment Service\n(ST-06)" as Payment
+actor "Nhân viên quầy\n(ST-02, mở rộng)" as Barista
+actor "Quản lý / PO\n(ST-03, mở rộng)" as Manager
+rectangle "BrewLite – System Boundary" {
+  package "Xem và chọn sản phẩm" {
+    usecase "UC-01\nXem menu" as UC01
+    usecase "UC-02\nChi tiết / size, topping" as UC02
+    usecase "UC-03\nGiỏ hàng / tổng tiền" as UC03
+  }
+  package "Tài khoản / Đặt và thanh toán" {
+    usecase "UC-04\nĐăng ký" as UC04
+    usecase "UC-05\nĐăng nhập" as UC05
+    usecase "UC-06\nĐặt đơn" as UC06
+    usecase "UC-07\nThanh toán mô phỏng" as UC07
+    usecase "UC-08\nXác nhận đơn" as UC08
+    usecase "UC-09\nTrạng thái / lịch sử" as UC09
+  }
+  package "Nghiệp vụ hỗ trợ" {
+    usecase "UC-10\nState Machine (FR-15)" as UC10
+    usecase "UC-11\nÁp dụng khuyến mãi (FR-18)" as UC11
+    usecase "UC-12\nGhi điểm Loyalty (FR-19)" as UC12
+    usecase "UC-16\nKiểm tra tồn kho (FR-17)" as UC16
+    usecase "UC-17\nIdempotency (FR-16)" as UC17
+  }
+  package "Mở rộng – Could" #FFF5D9 {
+    usecase "UC-13\nGiao diện Barista (FR-20)" as UC13
+    usecase "UC-14\nQuản lý menu (FR-21)" as UC14
+    usecase "UC-15\nThông báo chủ động (FR-22)" as UC15
+  }
+}
+Customer -- UC01
+Customer -- UC04
+Customer -- UC06
+Customer -- UC07
+Customer -- UC09
+Payment -- UC07
+Barista -- UC13
+Manager -- UC14
+UC06 ..> UC16 : <<include>>
+UC07 ..> UC17 : <<include>>
+UC11 ..> UC03 : <<extend>>\n[khách nhập mã]
+note bottom of UC09
+UC-18 là Use Case trọng tâm tổng hợp của Task 1.3;
+không tạo oval trùng trên sơ đồ tổng quát.
+end note
+@enduml
