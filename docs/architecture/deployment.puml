@@ -1,0 +1,90 @@
+@startuml
+' BrewLite - Assignment 2 / Task 3.2
+' Converted from the supplied diagrams.net Deployment Diagram.
+' Status: PROPOSED - NOT DEPLOYED. Review platform and port settings before approval.
+
+title BrewLite - UML Deployment Diagram\nRailway Production Proposal (NOT DEPLOYED)
+
+skinparam backgroundColor #FFFFFF
+skinparam shadowing false
+skinparam defaultFontName Arial
+skinparam defaultFontSize 13
+skinparam packageStyle rectangle
+skinparam linetype ortho
+skinparam ArrowColor #52677E
+skinparam node {
+  BackgroundColor #FFFFFF
+  BorderColor #46566B
+}
+skinparam artifact {
+  BackgroundColor #FFFFFF
+  BorderColor #46566B
+}
+skinparam database {
+  BackgroundColor #FFFFFF
+  BorderColor #46566B
+}
+left to right direction
+
+package "LOCAL / Developer Workstation" as LOCAL #F2F7FC {
+  node "<<device>>\nWindows PC\nVS Code + Git" as DEV
+  artifact "brewlite monorepo\napps/web · apps/api · docs" as SRC
+  node "<<executionEnvironment>>\nDocker Compose\nweb + API + PostgreSQL\n(local only)" as COMPOSE
+  DEV --> SRC : edits
+  SRC --> COMPOSE : docker compose up
+}
+
+package "CI / GitHub Actions (Proposed)" as CI #F5F2FC {
+  artifact "GitHub source\nfeature branch" as REPO
+  node "<<executionEnvironment>>\nGitHub-hosted Runner\nCheckout -> Install -> Lint -> Test -> Build" as RUNNER
+  artifact "Docker image\nbrewlite-api:<SHA>\nBuild -> Push (proposed)" as BUILD
+  REPO --> RUNNER : trigger PR / push
+  RUNNER --> BUILD : quality gate passes
+}
+
+package "REGISTRY / GHCR (Proposed)" as REG #FFF7E8 {
+  node "<<executionEnvironment>>\nGitHub Container Registry\nGHCR - authentication required" as GHCR
+  artifact "ghcr.io/<owner>/brewlite-api:<SHA>\nImmutable version tag" as IMAGE
+  GHCR --> IMAGE : stores image
+}
+
+package "PRODUCTION / Railway (PROPOSED, NOT DEPLOYED)" as PROD #EFF8F4 {
+  node "<<device>>\nCustomer Smartphone / Laptop\n<<executionEnvironment>> Browser / PWA" as CLIENT
+
+  node "<<executionEnvironment>>\nRailway Web Service\nNext.js / apps/web\nPublic HTTPS" as WEB {
+    artifact "Next.js build" as WEB_BUILD
+  }
+
+  node "<<executionEnvironment>>\nRailway API Service\nNestJS Modular Monolith / apps/api\nInternal PORT (e.g. 3000)" as API {
+    artifact "brewlite-api:<SHA>" as API_BUILD
+    component "Mock Payment Adapter\nINSIDE NestJS\n(no real-money payment)" as PAY
+  }
+
+  database "<<executionEnvironment>>\nRailway PostgreSQL\nPrivate DB / TCP 5432" as DB {
+    artifact "Persistent Volume / PostgreSQL Data\nManaged storage; backup policy to confirm" as STORAGE
+  }
+
+  node "<<executionEnvironment>>\nRailway Platform Facilities" as OPS {
+    artifact "Environment / Secrets\nDATABASE_URL · JWT_SECRET\nNODE_ENV · PORT\n(names only)" as ENV
+    artifact "Application Logs\nHealth Check: GET /health" as OBS
+  }
+
+  CLIENT --> WEB : HTTPS :443
+  CLIENT --> API : HTTPS REST/JSON :443\nclient-side calls
+  WEB ..> API : HTTPS REST/JSON :443\nserver-side calls (if used)
+  API --> DB : private PostgreSQL TCP :5432
+  API_BUILD ..> PAY : in-process adapter call
+  OPS ..> API : inject secrets / capture logs\nprobe GET /health
+  OPS ..> WEB : web env / deployment logs
+}
+
+BUILD --> GHCR : push HTTPS :443
+IMAGE --> API_BUILD : pull image HTTPS :443
+
+legend bottom
+  All Production services and CI image publishing are proposed, not verified as deployed.
+  Next.js may deploy from source; the GHCR image path shown is for the NestJS API.
+  Mock Payment runs within the NestJS process, not in a separate container.
+endlegend
+
+@enduml
