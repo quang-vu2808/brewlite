@@ -1,6 +1,6 @@
 # BrewLite
 
-BrewLite là ứng dụng web đặt đồ uống, phát triển cho học phần **Công nghệ Phần mềm – Trường Đại học Sài Gòn**. Repository hiện triển khai MVP gồm menu, tùy chọn sản phẩm, giỏ hàng, tạo đơn hàng và xác thực tài khoản.
+BrewLite là ứng dụng web đặt đồ uống, phát triển cho học phần **Công nghệ Phần mềm – Trường Đại học Sài Gòn**. Repository hiện triển khai MVP gồm menu, tùy chọn sản phẩm, giỏ hàng, tạo đơn hàng, xác thực tài khoản và thanh toán mô phỏng.
 
 ## Mục lục
 
@@ -43,14 +43,15 @@ BrewLite giúp khách hàng xem menu đồ uống, tùy chỉnh món theo size v
 │   │   │   ├── auth/        # Đăng ký, đăng nhập, JWT guard
 │   │   │   ├── database/    # Migration TypeORM
 │   │   │   ├── orders/      # Tạo đơn, DTO, entity, nghiệp vụ giá
+│   │   │   ├── payments/    # Thanh toán mock và lịch sử lần thử
 │   │   │   ├── products/    # API sản phẩm và catalog mẫu
 │   │   │   └── users/       # User entity và truy cập dữ liệu
 │   │   └── test/            # Kiểm thử API
 │   └── web/
 │       ├── public/          # Tài nguyên tĩnh
 │       └── src/
-│           ├── app/         # Trang Menu, sản phẩm, giỏ hàng, tài khoản
-│           ├── components/  # Header, providers, cart toast
+│           ├── app/         # Menu, sản phẩm, giỏ hàng, checkout, tài khoản
+│           ├── components/  # Header, auth/cart/checkout providers, toast
 │           └── lib/         # Logic giá và kiểm thử
 ├── docs/
 │   ├── architecture/
@@ -76,7 +77,7 @@ Trạng thái dưới đây dựa trên mã nguồn hiện tại và các kiểm
 | 5 | Giỏ hàng | Đã có React Context, khôi phục từ `localStorage`, thay đổi số lượng, xóa món, tính tổng, badge Header và thông báo thêm món. |
 | 6 | API tạo đơn | Đã có `POST /orders`, validation, tính lại giá ở backend, lưu Order/OrderItem bằng transaction và trạng thái `PENDING`. |
 | 7 | Tài khoản và xác thực | Đã có đăng ký/đăng nhập, bcrypt, JWT và bảo vệ tạo đơn; trang tài khoản hiển thị thông tin session hiện tại. |
-| 8 | Thanh toán mock | Chưa triển khai. |
+| 8 | Thanh toán mock | Đã có lựa chọn Ví/Thẻ mô phỏng, API có JWT, lưu Payment và cập nhật trạng thái đơn trong transaction; xem kết quả kiểm thử tại mục 9. |
 | 9 | Xác nhận, lịch sử đơn và bàn giao | Chưa hoàn thiện. Tạo đơn trả mã đơn/trạng thái qua API và giao diện giỏ hàng; chưa có trang lịch sử hoặc luồng xác nhận riêng. |
 | 10 | Nghiệp vụ Backend nâng cao | Chưa triển khai state machine, idempotency, quản lý tồn kho hoặc loyalty. |
 
@@ -165,6 +166,7 @@ API hiện cấu hình CORS cho `http://localhost:3000`. Cấu hình host, origi
 | `DB_NAME` | API | Tên database; mặc định `brewlite`. |
 | `JWT_SECRET` | API | Khóa ký JWT, bắt buộc và tối thiểu 32 byte. |
 | `PORT` | API | Cổng NestJS; mặc định `3001`. |
+| `MOCK_PAYMENT_MODE` | API | `SUCCESS` (mặc định) hoặc `FAIL`; dùng mô phỏng kết quả, không gọi cổng thanh toán. |
 | `NEXT_PUBLIC_API_URL` | Web | URL API, đặt trong `apps/web/.env.local`; mặc định `http://localhost:3001`. |
 
 Docker Compose cố định tên database/user mặc định `brewlite` và đọc `DB_PASSWORD` từ `.env`. API đọc các biến `DB_*` và `JWT_SECRET` từ `.env` ở thư mục gốc. Không đặt mật khẩu hoặc secret thật trong README, mã nguồn hay log.
@@ -178,8 +180,27 @@ Docker Compose cố định tên database/user mặc định `brewlite` và đ�
 | `POST` | `/auth/register` | Đăng ký tài khoản | Không |
 | `POST` | `/auth/login` | Đăng nhập và nhận JWT | Không |
 | `POST` | `/orders` | Tạo đơn từ các sản phẩm/tùy chọn; backend kiểm tra và tính lại giá | Có |
+| `POST` | `/payments` | Thanh toán mô phỏng đơn của người dùng; ghi lần thử và cập nhật trạng thái đơn | Có |
 
-Các endpoint trên được đối chiếu với Controller hiện có. API tạo đơn nhận thông tin giỏ hàng, không tin giá do client gửi, và trả thông tin đơn mới ở trạng thái `PENDING`.
+`POST /payments` nhận JSON dạng `{"orderId":"<UUID>","method":"WALLET"}`; `method` hỗ trợ `WALLET` và `CARD`. API lấy số tiền từ đơn đã lưu, không nhận `amount` từ client, đồng thời chỉ cho chủ đơn thanh toán. API trả `SUCCESS`/`PAID` hoặc `FAILED`/`PAYMENT_FAILED` trong HTTP 201; lỗi xác thực, quyền sở hữu, trạng thái hoặc DTO dùng mã HTTP phù hợp.
+
+Ví dụ response thanh toán thành công:
+
+```json
+{
+  "paymentId": "UUID",
+  "orderId": "UUID",
+  "method": "WALLET",
+  "status": "SUCCESS",
+  "orderStatus": "PAID",
+  "amount": 75000,
+  "message": "Thanh toán giả lập thành công"
+}
+```
+
+Khi mock thất bại, response có `status: "FAILED"` và `orderStatus: "PAYMENT_FAILED"`; đây là kết quả mô phỏng trả HTTP 201, không phải lỗi HTTP. `paymentId` và `orderId` thực tế là UUID do hệ thống tạo/lưu.
+
+Mọi đơn mới bắt đầu ở `PENDING`. Chế độ mock mặc định là thành công; đặt `MOCK_PAYMENT_MODE=FAIL` trong môi trường API để mô phỏng thất bại. Cần khởi động lại API sau khi đổi cấu hình. Đây chỉ là mô phỏng, không thu tiền và không kết nối MoMo, ZaloPay, Stripe, VNPAY hay dịch vụ thanh toán khác.
 
 ## 8. Hướng dẫn sử dụng
 
@@ -188,8 +209,12 @@ Các endpoint trên được đối chiếu với Controller hiện có. API t�
 3. Thêm sản phẩm vào giỏ. Có thể mở giỏ từ Header; cart được lưu trong trình duyệt.
 4. Trong giỏ, tăng/giảm số lượng hoặc xóa sản phẩm.
 5. Đăng ký hoặc đăng nhập để tiếp tục tạo đơn.
-6. Gửi đơn từ giỏ hàng. Khi thành công, API trả mã đơn và trạng thái `PENDING`; giỏ chỉ được xóa sau khi tạo đơn thành công.
-7. Trang Tài khoản hiển thị session đang đăng nhập. Token chỉ được giữ trong bộ nhớ nên tải lại trang cần đăng nhập lại.
+6. Gửi đơn từ giỏ hàng; API lưu đơn ở trạng thái `PENDING` và chuyển sang bước thanh toán.
+7. Chọn Ví điện tử hoặc Thẻ mô phỏng rồi thanh toán. Khi thành công đơn thành `PAID` và giỏ được xóa; khi thất bại đơn thành `PAYMENT_FAILED`, giỏ được giữ và có thể thử lại trên cùng đơn.
+8. Tải lại trang không tự tạo đơn hoặc gửi thanh toán. Thông tin đơn chờ thanh toán được giữ trong `sessionStorage` tab hiện tại; nếu cần đăng nhập lại, phiên JWT vẫn chỉ ở bộ nhớ và không được ghi vào storage.
+9. Trang Tài khoản hiển thị session đang đăng nhập. Token chỉ được giữ trong bộ nhớ nên tải lại trang cần đăng nhập lại.
+
+Schema được mở rộng bằng migration `1710000002000-CreatePayments.ts`, tạo bảng `payments` và khóa ngoại tới `orders`; API tự chạy migration khi khởi động. Cột trạng thái `orders.status` đã là `varchar(20)`, nên chứa được `PAID` và `PAYMENT_FAILED` mà không cần thay đổi kiểu cột. Không xóa database hoặc Docker volume để chạy migration.
 
 ## 9. Kiểm thử và chất lượng mã nguồn
 
@@ -209,14 +234,26 @@ npm run build
 
 ```powershell
 Set-Location apps/api
+npx tsc --noEmit
 npm run lint
 npm run test -- --runInBand
 npm run build
 ```
 
+Để kiểm tra thanh toán thất bại cục bộ, khởi động API trong cùng PowerShell với biến môi trường:
+
+```powershell
+$env:MOCK_PAYMENT_MODE = "FAIL"
+npm run start:dev
+```
+
+Mặc định (không đặt biến, hoặc đặt `SUCCESS`) mô phỏng thành công. Khởi động lại API ở chế độ `SUCCESS` để kiểm tra thành công. Chế độ này chỉ điều khiển kết quả giả lập và không được client gửi lên.
+
 CI tại `.github/workflows/ci.yml` chạy khi có pull request vào `main`. Hai job Web và API lần lượt cài dependencies bằng `npm ci`, chạy lint, unit test và build với Node.js 24. API có script `test:e2e`; README không xem script đó là bằng chứng cho một bộ integration test đã chạy thành công.
 
-Tại lần kiểm tra gần nhất trước khi cập nhật giao diện Tài khoản: Web có 10 unit tests và API có 28 unit tests; lint, build, cùng TypeScript Web đều đạt. Những kết quả này chưa bao gồm xác minh mới nhất cho thay đổi UI Tài khoản trong phiên hiện tại.
+Kết quả kiểm tra Task 8: Web lint, TypeScript và build đạt; **14/14** unit tests trong 4 file đạt. API lint, TypeScript và build đạt; **37/37** unit tests trong 8 suite đạt. Kiểm tra trực tiếp trên PostgreSQL 17 xác nhận migration và bảng `payments`; đã thử Wallet/Card thành công, mock thất bại, DTO/method sai, JWT thiếu/sai, đơn không tồn tại/không thuộc user/đã PAID, số tiền gửi thêm bị từ chối, request đồng thời cho kết quả HTTP `201` và `409`, và rollback khi cố ý làm lỗi bước cập nhật đơn. Dữ liệu user/order tạo riêng cho kiểm tra đã được xóa sau đó; dữ liệu trước đó được giữ nguyên.
+
+Kiểm thử giao diện trên trình duyệt xác nhận đăng ký/đăng nhập → Menu/chi tiết → giỏ hàng → tạo đơn → Card mô phỏng thành công, hiển thị `PAID` và xóa cart. Màn hình thất bại được kiểm tra với response giả lập ở trình duyệt; API failure thật đã được kiểm tra riêng với PostgreSQL ở chế độ `MOCK_PAYMENT_MODE=FAIL`. Tải lại trang checkout không tự gửi lại request thanh toán; tại viewport mobile nội dung không tràn ngang.
 
 ## 10. Tiến độ Assignment 1
 
@@ -229,7 +266,7 @@ Tại lần kiểm tra gần nhất trước khi cập nhật giao diện Tài k
 | 5 | Giỏ hàng | Đã triển khai |
 | 6 | API tạo đơn hàng | Đã triển khai |
 | 7 | Đăng ký, đăng nhập và bảo vệ API | Đã triển khai |
-| 8 | Thanh toán mock | Chưa triển khai |
+| 8 | Thanh toán mock | Đã triển khai; kiểm tra kết quả test ở mục 9 |
 | 9 | Xác nhận, lịch sử đơn và bàn giao | Chưa hoàn thiện |
 | 10 | Nghiệp vụ Backend nâng cao | Chưa triển khai |
 
@@ -240,14 +277,15 @@ Trạng thái phản ánh tính năng có trong mã nguồn và không xác nh�
 - Danh sách sản phẩm chưa lưu trong PostgreSQL; API dùng catalog mẫu trong bộ nhớ.
 - Phụ thu size và topping là cấu hình mẫu; chưa có quản trị giá hoặc đồng bộ từ backend với một nguồn dữ liệu giá tập trung.
 - JWT có thời hạn 15 phút và chỉ lưu trong bộ nhớ frontend. Tải lại trang phải đăng nhập lại; logout phía client không thu hồi token đã phát trước khi token hết hạn.
-- Không có refresh token, lịch sử đơn, thanh toán thật hoặc thanh toán mock.
+- Thông tin đơn thanh toán được giữ trong `sessionStorage` của tab để phục hồi bước checkout; JWT không được lưu ở đó.
+- Thanh toán chỉ là mô phỏng: mode `SUCCESS`/`FAIL` áp dụng cho mọi phương thức trên tiến trình API đang chạy, không đại diện cho cổng thanh toán hoặc giao dịch tiền thật.
+- Không có refresh token, lịch sử đơn hoàn chỉnh hoặc thanh toán thật.
 - Loyalty chưa triển khai; điểm hiển thị trên trang tài khoản không đại diện cho hệ thống tích điểm.
 - CORS hiện cho phép origin local `http://localhost:3000`; cần cấu hình phù hợp trước khi triển khai.
 - Docker Compose chỉ quản lý PostgreSQL, không đóng gói hoặc khởi chạy Web/API.
 
 ## 12. Hướng phát triển tiếp theo
 
-- **Task 8:** triển khai luồng thanh toán mock.
 - **Task 9:** xây dựng trang xác nhận, lịch sử đơn và quy trình bàn giao.
 - **Task 10:** bổ sung state machine cho đơn, idempotency, quản lý tồn kho và loyalty.
 - Thay catalog và cấu hình giá mẫu bằng dữ liệu nghiệp vụ có nguồn quản trị đáng tin cậy.

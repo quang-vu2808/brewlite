@@ -9,6 +9,7 @@ import {
 } from 'typeorm';
 import { OrderItemEntity } from './order-item.entity';
 import { UserEntity } from '../../users/user.entity';
+import { PaymentEntity } from '../../payments/payment.entity';
 
 @Entity({ name: 'orders' })
 export class OrderEntity {
@@ -36,4 +37,7 @@ export class OrderEntity {
 
   @OneToMany(() => OrderItemEntity, (item) => item.order)
   items!: OrderItemEntity[];
+
+  @OneToMany(() => PaymentEntity, (payment) => payment.order)
+  payments!: PaymentEntity[];
 }

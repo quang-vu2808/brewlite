@@ -9,7 +9,7 @@ import { OrdersService } from './orders.service';
 
 describe('OrdersService', () => {
   const createdAt = new Date('2025-01-01T00:00:00.000Z');
-  const product = { id: 1, name: 'Cà phê sữa', price: 25000, image: null };
+  const product = { id: 1, name: 'Cà phê sữa', price: 25000, image: '' };
   const save = jest.fn(
     async (
       target: typeof OrderEntity | typeof OrderItemEntity,
@@ -44,15 +44,14 @@ describe('OrdersService', () => {
   });
 
   it('recalculates prices and saves a PENDING order and its items transactionally', async () => {
-    const dto = {
+    const dto: CreateOrderDto = {
       items: [{
         productId: 1,
         size: 'M',
         toppings: ['pearls'],
         quantity: 2,
-        unitPrice: 1,
       }],
-    } as CreateOrderDto;
+    };
 
     await expect(service.create(dto, 'user-id')).resolves.toMatchObject({
       id: 'order-id',
