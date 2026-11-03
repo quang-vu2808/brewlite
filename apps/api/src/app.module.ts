@@ -5,10 +5,13 @@ import { resolve } from 'node:path';
 import { AppController } from './app.controller';
 import { AppService } from './app.service';
 import { CreateOrders1710000000000 } from './database/migrations/1710000000000-CreateOrders';
+import { AddUsersAndOrderOwner1710000001000 } from './database/migrations/1710000001000-AddUsersAndOrderOwner';
+import { AuthModule } from './auth/auth.module';
 import { OrderEntity } from './orders/entities/order.entity';
 import { OrderItemEntity } from './orders/entities/order-item.entity';
 import { OrdersModule } from './orders/orders.module';
 import { ProductsModule } from './products/products.module';
+import { UserEntity } from './users/user.entity';
 
 @Module({
   imports: [
@@ -35,14 +38,18 @@ import { ProductsModule } from './products/products.module';
           username: config.get<string>('DB_USER') ?? 'brewlite',
           password: config.getOrThrow<string>('DB_PASSWORD'),
           database: config.get<string>('DB_NAME') ?? 'brewlite',
-          entities: [OrderEntity, OrderItemEntity],
-          migrations: [CreateOrders1710000000000],
+          entities: [OrderEntity, OrderItemEntity, UserEntity],
+          migrations: [
+            CreateOrders1710000000000,
+            AddUsersAndOrderOwner1710000001000,
+          ],
           migrationsRun: true,
           synchronize: false,
         };
       },
     }),
     ProductsModule,
+    AuthModule,
     OrdersModule,
   ],
   controllers: [AppController],

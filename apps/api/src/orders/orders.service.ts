@@ -40,7 +40,7 @@ export class OrdersService {
     private readonly productsService: ProductsService,
   ) {}
 
-  async create(dto: CreateOrderDto) {
+  async create(dto: CreateOrderDto, userId: string) {
     const items = this.priceOrderItems(dto.items);
     const totalAmount = items.reduce((total, item) => total + item.lineTotal, 0);
 
@@ -56,6 +56,7 @@ export class OrdersService {
       const savedOrder = await manager.save(OrderEntity, {
         status: 'PENDING',
         totalAmount,
+        userId,
       });
 
       const savedItems = await manager.save(

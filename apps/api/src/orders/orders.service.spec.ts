@@ -54,7 +54,7 @@ describe('OrdersService', () => {
       }],
     } as CreateOrderDto;
 
-    await expect(service.create(dto)).resolves.toMatchObject({
+    await expect(service.create(dto, 'user-id')).resolves.toMatchObject({
       id: 'order-id',
       orderCode: 'order-id',
       status: 'PENDING',
@@ -72,6 +72,7 @@ describe('OrdersService', () => {
     expect(save).toHaveBeenNthCalledWith(1, OrderEntity, {
       status: 'PENDING',
       totalAmount: 70000,
+      userId: 'user-id',
     });
     expect(save.mock.calls[1][0]).toBe(OrderItemEntity);
     expect(save.mock.calls[1][1]).toEqual([expect.objectContaining({
@@ -88,7 +89,7 @@ describe('OrdersService', () => {
   it('rejects unknown products before starting a transaction', async () => {
     await expect(service.create({
       items: [{ productId: 999, size: 'S', quantity: 1, toppings: [] }],
-    })).rejects.toBeInstanceOf(NotFoundException);
+    }, 'user-id')).rejects.toBeInstanceOf(NotFoundException);
     expect(transaction).not.toHaveBeenCalled();
   });
 });

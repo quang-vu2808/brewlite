@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useState } from "react";
 import { SiteHeader } from "../../components/site-header";
 import { useCart } from "../../components/cart-provider";
+import { useAuth } from "../../components/auth-provider";
 
 type CreatedOrder = {
   orderCode: string;
@@ -29,19 +30,25 @@ function isCreatedOrder(value: unknown): value is CreatedOrder {
 
 export default function CartPage() {
   const { items, hydrated, totalItems, totalPrice, increaseQuantity, decreaseQuantity, removeItem, clearCart } = useCart();
+  const { token, user, logout } = useAuth();
   const [submitting, setSubmitting] = useState(false);
   const [orderError, setOrderError] = useState("");
   const [createdOrder, setCreatedOrder] = useState<CreatedOrder | null>(null);
+  const [requiresAuthentication, setRequiresAuthentication] = useState(false);
 
   async function createOrder() {
-    if (submitting || items.length === 0) return;
+    if (submitting || items.length === 0 || !token) return;
     setSubmitting(true);
     setOrderError("");
+    setRequiresAuthentication(false);
 
     try {
       const response = await fetch(`${API_URL}/orders`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+        },
         body: JSON.stringify({
           items: items.map((item) => ({
             productId: Number(item.productId),
@@ -53,6 +60,11 @@ export default function CartPage() {
       });
 
       if (!response.ok) {
+        if (response.status === 401) {
+          logout();
+          setRequiresAuthentication(true);
+          throw new Error("Phiên đăng nhập đã hết hạn. Vui lòng đăng nhập lại để tiếp tục.");
+        }
         const detail: unknown = await response.json().catch(() => null);
         const message = typeof detail === "object" && detail !== null &&
           "message" in detail && typeof detail.message === "string"
@@ -147,10 +159,18 @@ export default function CartPage() {
               <h2>Tổng giỏ hàng</h2>
               <p><span>Tạm tính ({totalItems} sản phẩm)</span><strong>{formatter.format(totalPrice)}</strong></p>
               <p className="cart-total"><span>Tổng cộng</span><strong>{formatter.format(totalPrice)}</strong></p>
-              <button className="detail-action create-order-button" type="button" onClick={createOrder} disabled={submitting || !hydrated}>
-                {submitting ? "Đang tạo đơn..." : "Tạo đơn hàng"}
-              </button>
+              {!user ? (
+                <div className="cart-auth-prompt">
+                  <p>Đăng nhập để tiếp tục tạo đơn. Giỏ hàng của bạn vẫn được giữ nguyên.</p>
+                  <Link className="detail-action create-order-button" href="/login?returnTo=%2Fcart">Đăng nhập để đặt đơn</Link>
+                </div>
+              ) : (
+                <button className="detail-action create-order-button" type="button" onClick={createOrder} disabled={submitting || !hydrated}>
+                  {submitting ? "Đang tạo đơn..." : "Tạo đơn hàng"}
+                </button>
+              )}
               {orderError && <p className="order-error" role="alert">{orderError}</p>}
+              {requiresAuthentication && <Link className="cart-login-retry" href="/login?returnTo=%2Fcart">Đăng nhập lại</Link>}
               <Link className="continue-shopping" href="/#menu">← Tiếp tục chọn món</Link>
             </aside>
           </div>
