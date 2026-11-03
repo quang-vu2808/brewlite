@@ -14,10 +14,20 @@ describe('AuthService', () => {
     passwordHash: '',
     loyaltyPoints: 0,
     createdAt: new Date('2026-01-01T00:00:00.000Z'),
+    orders: [],
   };
-  const createUser = jest.fn<UsersService['create']>();
-  const findUserByEmail = jest.fn<UsersService['findByEmail']>();
-  const signToken = jest.fn<JwtService['signAsync']>();
+  const createUser = jest.fn<
+    ReturnType<UsersService['create']>,
+    Parameters<UsersService['create']>
+  >();
+  const findUserByEmail = jest.fn<
+    ReturnType<UsersService['findByEmail']>,
+    Parameters<UsersService['findByEmail']>
+  >();
+  const signToken = jest.fn<
+    ReturnType<JwtService['signAsync']>,
+    Parameters<JwtService['signAsync']>
+  >();
   const users = {
     create: createUser,
     findByEmail: findUserByEmail,

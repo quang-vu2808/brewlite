@@ -1,16 +1,12 @@
 "use client";
 
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { SiteHeader } from "../../components/site-header";
 import { useCart } from "../../components/cart-provider";
 import { useAuth } from "../../components/auth-provider";
-
-type CreatedOrder = {
-  orderCode: string;
-  status: "PENDING";
-  totalAmount: number;
-};
+import { parseCheckoutOrder, useCheckout } from "../../components/checkout-provider";
 
 const API_URL = (process.env.NEXT_PUBLIC_API_URL || "http://localhost:3001").replace(/\/$/, "");
 const formatter = new Intl.NumberFormat("vi-VN", {
@@ -19,21 +15,13 @@ const formatter = new Intl.NumberFormat("vi-VN", {
   maximumFractionDigits: 0,
 });
 
-function isCreatedOrder(value: unknown): value is CreatedOrder {
-  if (typeof value !== "object" || value === null) return false;
-  const order = value as Record<string, unknown>;
-  return typeof order.orderCode === "string" &&
-    order.status === "PENDING" &&
-    Number.isSafeInteger(order.totalAmount) &&
-    Number(order.totalAmount) >= 0;
-}
-
 export default function CartPage() {
-  const { items, hydrated, totalItems, totalPrice, increaseQuantity, decreaseQuantity, removeItem, clearCart } = useCart();
+  const router = useRouter();
+  const { items, hydrated, totalItems, totalPrice, increaseQuantity, decreaseQuantity, removeItem } = useCart();
   const { token, user, logout } = useAuth();
+  const { setOrder } = useCheckout();
   const [submitting, setSubmitting] = useState(false);
   const [orderError, setOrderError] = useState("");
-  const [createdOrder, setCreatedOrder] = useState<CreatedOrder | null>(null);
   const [requiresAuthentication, setRequiresAuthentication] = useState(false);
 
   async function createOrder() {
@@ -74,10 +62,13 @@ export default function CartPage() {
       }
 
       const payload: unknown = await response.json();
-      if (!isCreatedOrder(payload)) throw new Error("Phản hồi tạo đơn hàng không hợp lệ");
+      const order = parseCheckoutOrder(payload);
+      if (!order || order.status !== "PENDING") {
+        throw new Error("Phản hồi tạo đơn hàng không hợp lệ");
+      }
 
-      setCreatedOrder(payload);
-      clearCart();
+      setOrder(order);
+      router.push("/checkout");
     } catch (error) {
       setOrderError(error instanceof Error ? error.message : "Không thể tạo đơn hàng");
     } finally {
@@ -96,18 +87,6 @@ export default function CartPage() {
           </div>
           {hydrated && items.length > 0 && <span className="cart-item-count">{totalItems} sản phẩm</span>}
         </div>
-
-        {createdOrder && (
-          <section className="order-created-panel" role="status">
-            <span className="order-created-check" aria-hidden="true">✓</span>
-            <div>
-              <h2>Đơn hàng đã được tạo</h2>
-              <p>Mã đơn: <strong>{createdOrder.orderCode}</strong></p>
-              <p>Trạng thái: <strong>{createdOrder.status}</strong> · Tổng tiền {formatter.format(createdOrder.totalAmount)}</p>
-              <small>Đơn đang chờ xử lý. Đây chưa phải xác nhận thanh toán.</small>
-            </div>
-          </section>
-        )}
 
         {!hydrated ? (
           <div className="cart-loading" role="status">Đang tải giỏ hàng...</div>

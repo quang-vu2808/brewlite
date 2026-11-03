@@ -12,6 +12,9 @@ import { OrderItemEntity } from './orders/entities/order-item.entity';
 import { OrdersModule } from './orders/orders.module';
 import { ProductsModule } from './products/products.module';
 import { UserEntity } from './users/user.entity';
+import { PaymentEntity } from './payments/payment.entity';
+import { PaymentsModule } from './payments/payments.module';
+import { CreatePayments1710000002000 } from './database/migrations/1710000002000-CreatePayments';
 
 @Module({
   imports: [
@@ -38,10 +41,11 @@ import { UserEntity } from './users/user.entity';
           username: config.get<string>('DB_USER') ?? 'brewlite',
           password: config.getOrThrow<string>('DB_PASSWORD'),
           database: config.get<string>('DB_NAME') ?? 'brewlite',
-          entities: [OrderEntity, OrderItemEntity, UserEntity],
+          entities: [OrderEntity, OrderItemEntity, UserEntity, PaymentEntity],
           migrations: [
             CreateOrders1710000000000,
             AddUsersAndOrderOwner1710000001000,
+            CreatePayments1710000002000,
           ],
           migrationsRun: true,
           synchronize: false,
@@ -51,6 +55,7 @@ import { UserEntity } from './users/user.entity';
     ProductsModule,
     AuthModule,
     OrdersModule,
+    PaymentsModule,
   ],
   controllers: [AppController],
   providers: [AppService],
