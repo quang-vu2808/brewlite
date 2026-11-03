@@ -1,11 +1,14 @@
 import {
   CreateDateColumn,
   Entity,
+  JoinColumn,
+  ManyToOne,
   OneToMany,
   PrimaryGeneratedColumn,
   Column,
 } from 'typeorm';
 import { OrderItemEntity } from './order-item.entity';
+import { UserEntity } from '../../users/user.entity';
 
 @Entity({ name: 'orders' })
 export class OrderEntity {
@@ -20,6 +23,16 @@ export class OrderEntity {
 
   @CreateDateColumn({ name: 'created_at', type: 'timestamptz' })
   createdAt!: Date;
+
+  @Column({ name: 'user_id', type: 'uuid', nullable: true })
+  userId!: string | null;
+
+  @ManyToOne(() => UserEntity, (user) => user.orders, {
+    nullable: true,
+    onDelete: 'SET NULL',
+  })
+  @JoinColumn({ name: 'user_id' })
+  user!: UserEntity | null;
 
   @OneToMany(() => OrderItemEntity, (item) => item.order)
   items!: OrderItemEntity[];

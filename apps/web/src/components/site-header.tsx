@@ -2,9 +2,11 @@
 
 import Link from "next/link";
 import { useCart } from "./cart-provider";
+import { useAuth } from "./auth-provider";
 
 export function SiteHeader({ home = false }: { home?: boolean }) {
   const { hydrated, totalItems } = useCart();
+  const { user, logout } = useAuth();
 
   return (
     <header className="header">
@@ -18,6 +20,26 @@ export function SiteHeader({ home = false }: { home?: boolean }) {
       <div className="header-actions">
         {home && <a className="header-button" href="#menu">Xem menu <span aria-hidden="true">↗</span></a>}
         {!home && <Link className="header-button" href="/#menu">← Quay lại menu</Link>}
+        <div className="header-auth-controls">
+          {user ? (
+            <>
+              <Link
+                className="header-account-link"
+                href="/account"
+                aria-label={`Tài khoản, ${user.email}`}
+                title={user.email}
+              >
+                <span className="header-account-avatar" aria-hidden="true">
+                  {user.email.charAt(0).toUpperCase()}
+                </span>
+                <span className="header-account-label">Tài khoản</span>
+              </Link>
+              <button className="header-auth-button" type="button" onClick={logout}>Đăng xuất</button>
+            </>
+          ) : (
+            <Link className="header-auth-button" href="/login">Đăng nhập</Link>
+          )}
+        </div>
         <Link className="cart-header-link" href="/cart" aria-label={`Giỏ hàng${hydrated ? `, ${totalItems} sản phẩm` : ""}`}>
           <span aria-hidden="true">🛒</span><span className="cart-header-text">Giỏ hàng</span>
           <span className="cart-badge" aria-live="polite">{hydrated ? totalItems : 0}</span>
