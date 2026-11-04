@@ -1,6 +1,7 @@
 import 'reflect-metadata';
 import { NotFoundException } from '@nestjs/common';
 import type { DataSource, EntityManager } from 'typeorm';
+import { PaymentEntity } from '../payments/payment.entity';
 import { CreateOrderDto } from './dto/create-order-item.dto';
 import { OrderEntity } from './entities/order.entity';
 import { OrderItemEntity } from './entities/order-item.entity';
@@ -90,5 +91,69 @@ describe('OrdersService', () => {
       items: [{ productId: 999, size: 'S', quantity: 1, toppings: [] }],
     }, 'user-id')).rejects.toBeInstanceOf(NotFoundException);
     expect(transaction).not.toHaveBeenCalled();
+  });
+
+  it('returns only the authenticated user orders and their latest payment', async () => {
+    const find = jest.fn()
+      .mockResolvedValueOnce([Object.assign(new OrderEntity(), {
+        id: 'order-id',
+        userId: 'user-id',
+        status: 'PAID',
+        totalAmount: 35000,
+        createdAt,
+        items: [],
+      })])
+      .mockResolvedValueOnce([Object.assign(new PaymentEntity(), {
+        id: 'payment-id',
+        orderId: 'order-id',
+        method: 'CARD',
+        status: 'SUCCESS',
+        amount: 35000,
+        createdAt,
+      })]);
+    const listService = new OrdersService(
+      { manager: { find } } as unknown as DataSource,
+      productsService,
+    );
+
+    await expect(listService.findMine('user-id')).resolves.toEqual([{
+      id: 'order-id',
+      orderCode: 'order-id',
+      status: 'PAID',
+      totalAmount: 35000,
+      createdAt,
+      items: [],
+      payment: {
+        id: 'payment-id',
+        method: 'CARD',
+        status: 'SUCCESS',
+        amount: 35000,
+        createdAt,
+      },
+    }]);
+    expect(find).toHaveBeenNthCalledWith(1, OrderEntity, {
+      where: { userId: 'user-id' },
+      relations: { items: true },
+      order: { createdAt: 'DESC' },
+    });
+    expect(find).toHaveBeenNthCalledWith(2, PaymentEntity, {
+      where: { orderId: expect.anything() },
+      order: { createdAt: 'DESC' },
+    });
+  });
+
+  it('does not disclose an order owned by another user', async () => {
+    const findOne = jest.fn().mockResolvedValue(null);
+    const detailService = new OrdersService(
+      { manager: { findOne } } as unknown as DataSource,
+      productsService,
+    );
+
+    await expect(detailService.findOneForUser('order-id', 'user-id'))
+      .rejects.toBeInstanceOf(NotFoundException);
+    expect(findOne).toHaveBeenCalledWith(OrderEntity, {
+      where: { id: 'order-id', userId: 'user-id' },
+      relations: { items: true },
+    });
   });
 });

@@ -39,30 +39,33 @@ BrewLite giúp khách hàng xem menu đồ uống, tùy chỉnh món theo size v
 ├── .github/workflows/       # GitHub Actions CI
 ├── apps/
 │   ├── api/
+│   │   ├── Dockerfile
 │   │   ├── src/
 │   │   │   ├── auth/        # Đăng ký, đăng nhập, JWT guard
 │   │   │   ├── database/    # Migration TypeORM
-│   │   │   ├── orders/      # Tạo đơn, DTO, entity, nghiệp vụ giá
+│   │   │   ├── orders/      # Tạo đơn, truy vấn lịch sử/chi tiết, DTO, entity
 │   │   │   ├── payments/    # Thanh toán mock và lịch sử lần thử
 │   │   │   ├── products/    # API sản phẩm và catalog mẫu
 │   │   │   └── users/       # User entity và truy cập dữ liệu
 │   │   └── test/            # Kiểm thử API
 │   └── web/
+│       ├── Dockerfile
 │       ├── public/          # Tài nguyên tĩnh
 │       └── src/
-│           ├── app/         # Menu, sản phẩm, giỏ hàng, checkout, tài khoản
-│           ├── components/  # Header, auth/cart/checkout providers, toast
+│           ├── app/         # Menu, sản phẩm, giỏ hàng, checkout, tài khoản, đơn hàng
+│           ├── components/  # Header, providers, toast, giao diện lịch sử đơn
 │           └── lib/         # Logic giá và kiểm thử
 ├── docs/
 │   ├── architecture/
 │   ├── diagrams/
 │   └── requirements/
-├── docker-compose.yml       # PostgreSQL 17
+├── docker-compose.yml       # PostgreSQL, API và Web
+├── .dockerignore
 ├── .env.example             # Mẫu biến môi trường
 └── README.md
 ```
 
-Docker Compose chỉ khởi chạy PostgreSQL; API và Web được chạy bằng các lệnh npm riêng bên dưới. `docs/deployment.md` là tài liệu đề xuất triển khai, không xác nhận rằng ứng dụng đã được deploy.
+Docker Compose có thể chạy toàn bộ PostgreSQL, API và Web; cũng có thể chạy riêng database để phát triển Web/API bằng npm. `docs/deployment.md` là tài liệu đề xuất triển khai, không xác nhận rằng ứng dụng đã được deploy.
 
 ## 4. Các chức năng đã triển khai
 
@@ -78,7 +81,7 @@ Trạng thái dưới đây dựa trên mã nguồn hiện tại và các kiểm
 | 6 | API tạo đơn | Đã có `POST /orders`, validation, tính lại giá ở backend, lưu Order/OrderItem bằng transaction và trạng thái `PENDING`. |
 | 7 | Tài khoản và xác thực | Đã có đăng ký/đăng nhập, bcrypt, JWT và bảo vệ tạo đơn; trang tài khoản hiển thị thông tin session hiện tại. |
 | 8 | Thanh toán mock | Đã có lựa chọn Ví/Thẻ mô phỏng, API có JWT, lưu Payment và cập nhật trạng thái đơn trong transaction; xem kết quả kiểm thử tại mục 9. |
-| 9 | Xác nhận, lịch sử đơn và bàn giao | Chưa hoàn thiện. Tạo đơn trả mã đơn/trạng thái qua API và giao diện giỏ hàng; chưa có trang lịch sử hoặc luồng xác nhận riêng. |
+| 9 | Xác nhận, lịch sử đơn và bàn giao | Đã có API lịch sử/chi tiết theo chủ đơn, giao diện lịch sử/chi tiết và Docker Compose chạy Web/API/PostgreSQL; đã smoke-test API/UI. Quy trình bàn giao hoặc xác nhận nhận hàng chưa triển khai. |
 | 10 | Nghiệp vụ Backend nâng cao | Chưa triển khai state machine, idempotency, quản lý tồn kho hoặc loyalty. |
 
 Size/topping và catalog hiện dùng dữ liệu, quy tắc giá mẫu; cần đồng bộ và thay bằng nguồn dữ liệu nghiệp vụ thực trước khi vận hành thực tế.
@@ -118,12 +121,21 @@ Set-Content apps/web/.env.local "NEXT_PUBLIC_API_URL=http://localhost:3001"
 
 Từ thư mục gốc repository, sau khi đã điền `DB_PASSWORD` trong `.env`:
 
+Để chạy toàn bộ stack trong Docker:
+
+```powershell
+docker compose up --build -d
+docker compose ps
+```
+
+Sau khi các dịch vụ healthy, mở <http://localhost:3002>. API lắng nghe tại <http://localhost:3003>. Nếu chỉ muốn chạy Web/API bằng npm, khởi động riêng database:
+
 ```powershell
 docker compose up -d db
 docker compose ps
 ```
 
-Compose tạo volume tên `brewlite_pgdata` để lưu dữ liệu. Không dùng `docker compose down -v` để xử lý lỗi kết nối. Nếu đã có volume từ lần chạy trước, mật khẩu trong `.env` phải khớp với thông tin khởi tạo database hiện tại; đổi biến môi trường không tự đổi mật khẩu bên trong volume.
+Compose Task 9 tạo volume riêng `brewlite_task9_pgdata` và mặc định xuất bản PostgreSQL trên cổng `5433`, API trên `3003` và Web trên `3002`. Các cổng ứng dụng này tránh xung đột với tiến trình local thường dùng `3000/3001`; PostgreSQL/volume cũng tách biệt với database cũ ở cổng `5432`. Không dừng/xóa database hoặc volume cũ. Không dùng `docker compose down -v` để xử lý lỗi kết nối. Nếu volume Task 9 đã được khởi tạo, mật khẩu trong `.env` phải khớp; đổi biến môi trường không tự đổi mật khẩu trong database.
 
 ### Cài dependencies và chạy API
 
@@ -151,7 +163,7 @@ npm run dev
 - API: <http://localhost:3001>
 - Danh sách sản phẩm: <http://localhost:3001/products>
 
-API hiện cấu hình CORS cho `http://localhost:3000`. Cấu hình host, origin và secret cần được rà soát trước khi triển khai môi trường khác.
+API local mặc định cho phép hai origin Web `http://localhost:3000` và `http://localhost:3002`, có thể cấu hình qua `WEB_ORIGIN`. Cần giới hạn lại danh sách này cho domain thực trước khi triển khai môi trường khác.
 
 ## 6. Cấu hình môi trường
 
@@ -160,16 +172,21 @@ API hiện cấu hình CORS cho `http://localhost:3000`. Cấu hình host, origi
 | Biến | Dùng bởi | Ý nghĩa |
 |---|---|---|
 | `DB_HOST` | API | Host PostgreSQL; khi chạy API trực tiếp trên máy thường là `localhost`. |
-| `DB_PORT` | API | Cổng PostgreSQL; mặc định `5432`. |
+| `DB_PORT` | API chạy trực tiếp | Cổng PostgreSQL trên máy host; mặc định mẫu là `5433` cho Compose Task 9. |
 | `DB_USER` | API | Tài khoản PostgreSQL; mặc định `brewlite`. |
 | `DB_PASSWORD` | Docker Compose, API | Mật khẩu PostgreSQL; bắt buộc. |
 | `DB_NAME` | API | Tên database; mặc định `brewlite`. |
 | `JWT_SECRET` | API | Khóa ký JWT, bắt buộc và tối thiểu 32 byte. |
 | `PORT` | API | Cổng NestJS; mặc định `3001`. |
+| `WEB_ORIGIN` | API | Danh sách origin trình duyệt được phép, phân cách bằng dấu phẩy. |
 | `MOCK_PAYMENT_MODE` | API | `SUCCESS` (mặc định) hoặc `FAIL`; dùng mô phỏng kết quả, không gọi cổng thanh toán. |
-| `NEXT_PUBLIC_API_URL` | Web | URL API, đặt trong `apps/web/.env.local`; mặc định `http://localhost:3001`. |
+| `NEXT_PUBLIC_API_URL` | Web chạy trực tiếp | URL API, đặt trong `apps/web/.env.local`; mặc định `http://localhost:3001`. |
+| `NEXT_PUBLIC_API_URL_DOCKER` | Docker Compose build Web | URL API mà trình duyệt truy cập; mặc định `http://127.0.0.1:3003`. |
+| `DB_PUBLISHED_PORT` | Docker Compose | Cổng host xuất bản PostgreSQL; mặc định `5433`. |
+| `API_PUBLISHED_PORT` | Docker Compose | Cổng host xuất bản API; mặc định `3003`. |
+| `WEB_PUBLISHED_PORT` | Docker Compose | Cổng host xuất bản Web; mặc định `3002`. |
 
-Docker Compose cố định tên database/user mặc định `brewlite` và đọc `DB_PASSWORD` từ `.env`. API đọc các biến `DB_*` và `JWT_SECRET` từ `.env` ở thư mục gốc. Không đặt mật khẩu hoặc secret thật trong README, mã nguồn hay log.
+Docker Compose đọc `DB_USER`, `DB_PASSWORD`, `DB_NAME` để khởi tạo PostgreSQL; API container dùng host nội bộ `db:5432`. Khi API chạy trực tiếp trên máy, `DB_HOST=localhost` và `DB_PORT` phải trỏ tới cổng được publish. `JWT_SECRET` không được đưa vào Web. Compose build Web với `NEXT_PUBLIC_API_URL_DOCKER`, là URL trình duyệt truy cập được, không phải hostname nội bộ Docker. Không đặt mật khẩu hoặc secret thật trong README, mã nguồn hay log.
 
 ## 7. Danh sách API
 
@@ -180,6 +197,8 @@ Docker Compose cố định tên database/user mặc định `brewlite` và đ�
 | `POST` | `/auth/register` | Đăng ký tài khoản | Không |
 | `POST` | `/auth/login` | Đăng nhập và nhận JWT | Không |
 | `POST` | `/orders` | Tạo đơn từ các sản phẩm/tùy chọn; backend kiểm tra và tính lại giá | Có |
+| `GET` | `/orders/me` | Lịch sử đơn hàng của tài khoản đang đăng nhập | Có |
+| `GET` | `/orders/:id` | Chi tiết đơn, chỉ chủ đơn mới xem được | Có |
 | `POST` | `/payments` | Thanh toán mô phỏng đơn của người dùng; ghi lần thử và cập nhật trạng thái đơn | Có |
 
 `POST /payments` nhận JSON dạng `{"orderId":"<UUID>","method":"WALLET"}`; `method` hỗ trợ `WALLET` và `CARD`. API lấy số tiền từ đơn đã lưu, không nhận `amount` từ client, đồng thời chỉ cho chủ đơn thanh toán. API trả `SUCCESS`/`PAID` hoặc `FAILED`/`PAYMENT_FAILED` trong HTTP 201; lỗi xác thực, quyền sở hữu, trạng thái hoặc DTO dùng mã HTTP phù hợp.
@@ -212,7 +231,8 @@ Mọi đơn mới bắt đầu ở `PENDING`. Chế độ mock mặc định là
 6. Gửi đơn từ giỏ hàng; API lưu đơn ở trạng thái `PENDING` và chuyển sang bước thanh toán.
 7. Chọn Ví điện tử hoặc Thẻ mô phỏng rồi thanh toán. Khi thành công đơn thành `PAID` và giỏ được xóa; khi thất bại đơn thành `PAYMENT_FAILED`, giỏ được giữ và có thể thử lại trên cùng đơn.
 8. Tải lại trang không tự tạo đơn hoặc gửi thanh toán. Thông tin đơn chờ thanh toán được giữ trong `sessionStorage` tab hiện tại; nếu cần đăng nhập lại, phiên JWT vẫn chỉ ở bộ nhớ và không được ghi vào storage.
-9. Trang Tài khoản hiển thị session đang đăng nhập. Token chỉ được giữ trong bộ nhớ nên tải lại trang cần đăng nhập lại.
+9. Mở mục Đơn hàng ở Header hoặc trang Tài khoản để xem lịch sử; chọn một đơn để xem chi tiết và lần thanh toán mới nhất.
+10. Trang Tài khoản hiển thị session đang đăng nhập. Token chỉ được giữ trong bộ nhớ nên tải lại trang cần đăng nhập lại trước khi xem lịch sử.
 
 Schema được mở rộng bằng migration `1710000002000-CreatePayments.ts`, tạo bảng `payments` và khóa ngoại tới `orders`; API tự chạy migration khi khởi động. Cột trạng thái `orders.status` đã là `varchar(20)`, nên chứa được `PAID` và `PAYMENT_FAILED` mà không cần thay đổi kiểu cột. Không xóa database hoặc Docker volume để chạy migration.
 
@@ -251,7 +271,9 @@ Mặc định (không đặt biến, hoặc đặt `SUCCESS`) mô phỏng thành
 
 CI tại `.github/workflows/ci.yml` chạy khi có pull request vào `main`. Hai job Web và API lần lượt cài dependencies bằng `npm ci`, chạy lint, unit test và build với Node.js 24. API có script `test:e2e`; README không xem script đó là bằng chứng cho một bộ integration test đã chạy thành công.
 
-Kết quả kiểm tra Task 8: Web lint, TypeScript và build đạt; **14/14** unit tests trong 4 file đạt. API lint, TypeScript và build đạt; **37/37** unit tests trong 8 suite đạt. Kiểm tra trực tiếp trên PostgreSQL 17 xác nhận migration và bảng `payments`; đã thử Wallet/Card thành công, mock thất bại, DTO/method sai, JWT thiếu/sai, đơn không tồn tại/không thuộc user/đã PAID, số tiền gửi thêm bị từ chối, request đồng thời cho kết quả HTTP `201` và `409`, và rollback khi cố ý làm lỗi bước cập nhật đơn. Dữ liệu user/order tạo riêng cho kiểm tra đã được xóa sau đó; dữ liệu trước đó được giữ nguyên.
+Trước Task 9, Web lint, TypeScript và build đạt; **14/14** unit tests trong 4 file đạt. API lint, TypeScript và build đạt; **37/37** unit tests trong 8 suite đạt. Kiểm tra trực tiếp trên PostgreSQL 17 cho Task 8 xác nhận migration và bảng `payments`; đã thử Wallet/Card thành công, mock thất bại, DTO/method sai, JWT thiếu/sai, đơn không tồn tại/không thuộc user/đã PAID, số tiền gửi thêm bị từ chối, request đồng thời cho kết quả HTTP `201` và `409`, và rollback khi cố ý làm lỗi bước cập nhật đơn. Dữ liệu user/order tạo riêng cho kiểm tra đã được xóa sau đó; dữ liệu trước đó được giữ nguyên.
+
+Trong lần triển khai Task 9: Web lint, TypeScript, build đạt và **15/15** unit tests trong 4 file đạt; API typecheck, lint, build đạt và **39/39** unit tests trong 8 suite đạt. `docker compose config --quiet` và build/run toàn stack đạt; DB, API, Web đều healthy trên cổng lần lượt `5433`, `3003`, `3002`. Smoke test đăng ký/đăng nhập, tạo đơn 2 dòng hàng HTTP `201` với `PENDING` và tổng backend `141.000 VND`, đọc lịch sử/chi tiết, từ chối user khác với HTTP `404`, và xác nhận `1` order/`2` order items/tổng `141000` trực tiếp trong PostgreSQL. Trình duyệt xác nhận luồng tạo đơn → lịch sử → chi tiết; ở mobile viewport document không tràn ngang và các link Đơn hàng/Giỏ hàng còn trong vùng nhìn. Dữ liệu kiểm thử riêng đã được xóa; volume DB cũ vẫn còn nguyên.
 
 Kiểm thử giao diện trên trình duyệt xác nhận đăng ký/đăng nhập → Menu/chi tiết → giỏ hàng → tạo đơn → Card mô phỏng thành công, hiển thị `PAID` và xóa cart. Màn hình thất bại được kiểm tra với response giả lập ở trình duyệt; API failure thật đã được kiểm tra riêng với PostgreSQL ở chế độ `MOCK_PAYMENT_MODE=FAIL`. Tải lại trang checkout không tự gửi lại request thanh toán; tại viewport mobile nội dung không tràn ngang.
 
@@ -267,7 +289,7 @@ Kiểm thử giao diện trên trình duyệt xác nhận đăng ký/đăng nh�
 | 6 | API tạo đơn hàng | Đã triển khai |
 | 7 | Đăng ký, đăng nhập và bảo vệ API | Đã triển khai |
 | 8 | Thanh toán mock | Đã triển khai; kiểm tra kết quả test ở mục 9 |
-| 9 | Xác nhận, lịch sử đơn và bàn giao | Chưa hoàn thiện |
+| 9 | Xác nhận, lịch sử đơn và bàn giao | API/UI lịch sử và chi tiết đã triển khai, smoke-test đạt; bàn giao chưa triển khai |
 | 10 | Nghiệp vụ Backend nâng cao | Chưa triển khai |
 
 Trạng thái phản ánh tính năng có trong mã nguồn và không xác nhận triển khai production. Xem thêm ghi chú giới hạn ở [mục 11](#11-các-giới-hạn-hiện-tại).
@@ -279,13 +301,13 @@ Trạng thái phản ánh tính năng có trong mã nguồn và không xác nh�
 - JWT có thời hạn 15 phút và chỉ lưu trong bộ nhớ frontend. Tải lại trang phải đăng nhập lại; logout phía client không thu hồi token đã phát trước khi token hết hạn.
 - Thông tin đơn thanh toán được giữ trong `sessionStorage` của tab để phục hồi bước checkout; JWT không được lưu ở đó.
 - Thanh toán chỉ là mô phỏng: mode `SUCCESS`/`FAIL` áp dụng cho mọi phương thức trên tiến trình API đang chạy, không đại diện cho cổng thanh toán hoặc giao dịch tiền thật.
-- Không có refresh token, lịch sử đơn hoàn chỉnh hoặc thanh toán thật.
+- Không có refresh token hoặc thanh toán thật; lịch sử đơn chỉ dành cho tài khoản đã đăng nhập và không có chức năng hủy/đổi đơn.
 - Loyalty chưa triển khai; điểm hiển thị trên trang tài khoản không đại diện cho hệ thống tích điểm.
-- CORS hiện cho phép origin local `http://localhost:3000`; cần cấu hình phù hợp trước khi triển khai.
-- Docker Compose chỉ quản lý PostgreSQL, không đóng gói hoặc khởi chạy Web/API.
+- CORS mặc định cho phép hai origin local `http://localhost:3000` và `http://localhost:3002`; cần cấu hình phù hợp trước khi triển khai.
+- Docker Compose chạy được PostgreSQL, API và Web trong môi trường local; cấu hình hiện chưa phải cấu hình production.
 
 ## 12. Hướng phát triển tiếp theo
 
-- **Task 9:** xây dựng trang xác nhận, lịch sử đơn và quy trình bàn giao.
+- **Task 9:** hoàn thiện xác nhận đơn và quy trình bàn giao/nhận hàng.
 - **Task 10:** bổ sung state machine cho đơn, idempotency, quản lý tồn kho và loyalty.
 - Thay catalog và cấu hình giá mẫu bằng dữ liệu nghiệp vụ có nguồn quản trị đáng tin cậy.

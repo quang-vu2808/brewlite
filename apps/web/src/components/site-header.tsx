@@ -20,9 +20,10 @@ export function SiteHeader({ home = false }: { home?: boolean }) {
       <div className="header-actions">
         {home && <a className="header-button" href="#menu">Xem menu <span aria-hidden="true">↗</span></a>}
         {!home && <Link className="header-button" href="/#menu">← Quay lại menu</Link>}
-        <div className="header-auth-controls">
+        <div className={`header-auth-controls${user ? " is-authenticated" : ""}`}>
           {user ? (
             <>
+              <Link className="header-orders-link" href="/orders">Đơn hàng</Link>
               <Link
                 className="header-account-link"
                 href="/account"

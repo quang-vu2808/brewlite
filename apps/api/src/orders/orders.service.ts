@@ -1,7 +1,8 @@
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import { InjectDataSource } from '@nestjs/typeorm';
-import { DataSource } from 'typeorm';
+import { DataSource, In } from 'typeorm';
 import { ProductsService } from '../products/products.service';
+import { PaymentEntity } from '../payments/payment.entity';
 import { CreateOrderDto, CreateOrderItemDto } from './dto/create-order-item.dto';
 import { OrderEntity } from './entities/order.entity';
 import {
@@ -88,6 +89,73 @@ export class OrdersService {
         lineTotal: item.lineTotal,
       })),
     };
+  }
+
+  async findMine(userId: string) {
+    const orders = await this.dataSource.manager.find(OrderEntity, {
+      where: { userId },
+      relations: { items: true },
+      order: { createdAt: 'DESC' },
+    });
+
+    return this.withLatestPayments(orders);
+  }
+
+  async findOneForUser(orderId: string, userId: string) {
+    const order = await this.dataSource.manager.findOne(OrderEntity, {
+      where: { id: orderId, userId },
+      relations: { items: true },
+    });
+
+    if (!order) throw new NotFoundException('Không tìm thấy đơn hàng');
+    const [result] = await this.withLatestPayments([order]);
+    return result;
+  }
+
+  private async withLatestPayments(orders: OrderEntity[]) {
+    if (orders.length === 0) return [];
+
+    const orderIds = orders.map((order) => order.id);
+    const payments = await this.dataSource.manager.find(PaymentEntity, {
+      where: { orderId: In(orderIds) },
+      order: { createdAt: 'DESC' },
+    });
+    const latestPayments = new Map<string, PaymentEntity>();
+    for (const payment of payments) {
+      if (!latestPayments.has(payment.orderId)) {
+        latestPayments.set(payment.orderId, payment);
+      }
+    }
+
+    return orders.map((order) => {
+      const latestPayment = latestPayments.get(order.id);
+      return {
+        id: order.id,
+        orderCode: order.id,
+        status: order.status,
+        totalAmount: order.totalAmount,
+        createdAt: order.createdAt,
+        items: (order.items ?? []).map((item) => ({
+          id: item.id,
+          productId: item.productId,
+          productName: item.productName,
+          size: item.size,
+          toppings: item.toppings,
+          quantity: item.quantity,
+          unitPrice: item.unitPrice,
+          lineTotal: item.lineTotal,
+        })),
+        payment: latestPayment
+          ? {
+            id: latestPayment.id,
+            method: latestPayment.method,
+            status: latestPayment.status,
+            amount: latestPayment.amount,
+            createdAt: latestPayment.createdAt,
+          }
+          : null,
+      };
+    });
   }
 
   private priceOrderItems(requestItems: CreateOrderItemDto[]): PricedOrderItem[] {

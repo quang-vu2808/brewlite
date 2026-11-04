@@ -104,6 +104,10 @@ function mockJsonResponse(payload: unknown, status = 201) {
   };
 }
 
+function mockOrderResponse() {
+  return mockJsonResponse({ ...order, payment: null }, 200);
+}
+
 describe("CheckoutPage", () => {
   beforeEach(() => {
     window.sessionStorage.clear();
@@ -118,9 +122,11 @@ describe("CheckoutPage", () => {
   });
 
   it("offers wallet and card, sends only the order and method, and clears cart after success", async () => {
-    const fetchMock = vi.fn().mockResolvedValue(
-      mockJsonResponse(paymentResponse("SUCCESS", "CARD")),
-    );
+    const fetchMock = vi.fn((...args: Parameters<typeof fetch>) => Promise.resolve(
+      String(args[0]).endsWith(`/orders/${order.id}`)
+        ? mockOrderResponse()
+        : mockJsonResponse(paymentResponse("SUCCESS", "CARD")),
+    ));
     vi.stubGlobal("fetch", fetchMock);
     renderCheckout();
 
@@ -132,9 +138,10 @@ describe("CheckoutPage", () => {
     fireEvent.click(screen.getByRole("button", { name: /Thanh toán/ }));
 
     await screen.findByRole("heading", { name: "Thanh toán thành công" });
-    expect(fetchMock).toHaveBeenCalledTimes(1);
-    expect(fetchMock.mock.calls[0][0]).toBe("http://localhost:3001/payments");
-    const request = fetchMock.mock.calls[0][1] as RequestInit;
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    const paymentCall = fetchMock.mock.calls.find(([url]) => String(url).endsWith("/payments"));
+    expect(paymentCall?.[0]).toBe("http://localhost:3001/payments");
+    const request = paymentCall?.[1] as RequestInit;
     expect(request.headers).toEqual({
       "Content-Type": "application/json",
       Authorization: "Bearer test-access-token",
@@ -147,9 +154,11 @@ describe("CheckoutPage", () => {
   });
 
   it("shows a deterministic failure and keeps the cart for a retry on the same order", async () => {
-    const fetchMock = vi.fn().mockResolvedValue(
-      mockJsonResponse(paymentResponse("FAILED")),
-    );
+    const fetchMock = vi.fn((...args: Parameters<typeof fetch>) => Promise.resolve(
+      String(args[0]).endsWith(`/orders/${order.id}`)
+        ? mockOrderResponse()
+        : mockJsonResponse(paymentResponse("FAILED")),
+    ));
     vi.stubGlobal("fetch", fetchMock);
     renderCheckout();
 
@@ -163,8 +172,9 @@ describe("CheckoutPage", () => {
     expect((screen.getByRole("button", { name: /Thanh toán/ }) as HTMLButtonElement).disabled).toBe(false);
 
     fireEvent.click(screen.getByRole("button", { name: /Thanh toán/ }));
-    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(2));
-    expect(JSON.parse(String(fetchMock.mock.calls[1][1]?.body))).toEqual({
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(3));
+    const paymentCall = fetchMock.mock.calls.filter(([url]) => String(url).endsWith("/payments")).at(-1);
+    expect(JSON.parse(String(paymentCall?.[1]?.body))).toEqual({
       orderId: order.id,
       method: "WALLET",
     });
@@ -172,9 +182,14 @@ describe("CheckoutPage", () => {
 
   it("prevents duplicate submissions while a payment request is pending", async () => {
     let resolveResponse: ((response: ReturnType<typeof mockJsonResponse>) => void) | undefined;
-    const fetchMock = vi.fn().mockReturnValue(new Promise((resolve) => {
-      resolveResponse = resolve;
-    }));
+    const fetchMock = vi.fn((...args: Parameters<typeof fetch>) => {
+      if (String(args[0]).endsWith(`/orders/${order.id}`)) {
+        return Promise.resolve(mockOrderResponse());
+      }
+      return new Promise((resolve) => {
+        resolveResponse = resolve;
+      });
+    });
     vi.stubGlobal("fetch", fetchMock);
     renderCheckout();
     await screen.findByRole("radiogroup", { name: "Phương thức thanh toán" });
@@ -182,7 +197,7 @@ describe("CheckoutPage", () => {
     const button = screen.getByRole("button", { name: /Thanh toán/ });
     fireEvent.click(button);
     fireEvent.click(button);
-    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(fetchMock).toHaveBeenCalledTimes(2);
     expect((button as HTMLButtonElement).disabled).toBe(true);
 
     resolveResponse?.(mockJsonResponse(paymentResponse("SUCCESS")));
@@ -203,5 +218,31 @@ describe("CheckoutPage", () => {
       "Dịch vụ tạm thời không khả dụng",
     );
     expect(screen.getByText("PENDING")).toBeTruthy();
+  });
+
+  it("refreshes the saved order status without submitting another payment", async () => {
+    const snapshot = {
+      ...order,
+      status: "PAID",
+      payment: {
+        id: "payment-uuid",
+        method: "CARD",
+        status: "SUCCESS",
+        amount: order.totalAmount,
+        createdAt: "2026-01-01T00:01:00.000Z",
+      },
+    };
+    const fetchMock = vi.fn((...args: Parameters<typeof fetch>) =>
+      String(args[0]).endsWith(`/orders/${order.id}`)
+        ? Promise.resolve(mockJsonResponse(snapshot, 200))
+        : Promise.reject(new Error("Unexpected payment request")),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+    renderCheckout();
+
+    await screen.findByRole("heading", { name: "Thanh toán thành công" });
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(String(fetchMock.mock.calls[0][0])).toBe(`http://localhost:3001/orders/${order.id}`);
+    expect(screen.getAllByText("PAID").length).toBeGreaterThan(0);
   });
 });

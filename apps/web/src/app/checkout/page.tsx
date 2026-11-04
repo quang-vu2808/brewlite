@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { SiteHeader } from "../../components/site-header";
 import { useAuth } from "../../components/auth-provider";
 import { useCart } from "../../components/cart-provider";
@@ -9,6 +9,7 @@ import {
   parseCheckoutPayment,
   useCheckout,
   type CheckoutPayment,
+  parseCheckoutOrder,
 } from "../../components/checkout-provider";
 
 type PaymentMethod = "WALLET" | "CARD";
@@ -33,13 +34,88 @@ function errorMessage(value: unknown, fallback: string): string {
 }
 
 export default function CheckoutPage() {
-  const { hydrated, order, payment, setPayment } = useCheckout();
+  const { hydrated, order, payment, setOrder, setPayment } = useCheckout();
   const { token, user, logout } = useAuth();
   const { clearCart } = useCart();
   const [method, setMethod] = useState<PaymentMethod>("WALLET");
   const [submitting, setSubmitting] = useState(false);
   const [requestError, setRequestError] = useState("");
   const [requiresAuthentication, setRequiresAuthentication] = useState(false);
+  const [orderRefreshError, setOrderRefreshError] = useState("");
+  const activeOrderId = order?.id;
+
+  useEffect(() => {
+    if (!hydrated || !activeOrderId || !token) return;
+    const currentOrderId: string = activeOrderId;
+    const accessToken: string = token;
+
+    const controller = new AbortController();
+    async function refreshOrder() {
+      setOrderRefreshError("");
+      try {
+        const response = await fetch(`${API_URL}/orders/${encodeURIComponent(currentOrderId)}`, {
+          headers: { Authorization: `Bearer ${accessToken}` },
+          signal: controller.signal,
+        });
+        const payload: unknown = await response.json().catch(() => null);
+        if (!response.ok) {
+          if (response.status === 401) logout();
+          throw new Error(errorMessage(payload, `Không thể xác minh đơn hàng (HTTP ${response.status}).`));
+        }
+
+        const refreshedOrder = parseCheckoutOrder(payload);
+        if (!refreshedOrder || refreshedOrder.id !== currentOrderId) {
+          throw new Error("Dữ liệu đơn hàng từ máy chủ không hợp lệ.");
+        }
+        setOrder(refreshedOrder);
+
+        const paymentValue = typeof payload === "object" && payload !== null && "payment" in payload
+          ? payload.payment
+          : null;
+        if (paymentValue === null) return;
+        if (typeof paymentValue !== "object" || paymentValue === null) {
+          throw new Error("Dữ liệu thanh toán từ máy chủ không hợp lệ.");
+        }
+        const snapshot = paymentValue as {
+          id?: unknown;
+          method?: unknown;
+          status?: unknown;
+          amount?: unknown;
+          createdAt?: unknown;
+        };
+        if (
+          typeof snapshot.id !== "string" ||
+          (snapshot.method !== "WALLET" && snapshot.method !== "CARD") ||
+          (snapshot.status !== "SUCCESS" && snapshot.status !== "FAILED") ||
+          typeof snapshot.amount !== "number" ||
+          !Number.isSafeInteger(snapshot.amount) ||
+          typeof snapshot.createdAt !== "string"
+        ) {
+          throw new Error("Dữ liệu thanh toán từ máy chủ không hợp lệ.");
+        }
+        const payment: CheckoutPayment = {
+          paymentId: snapshot.id,
+          orderId: refreshedOrder.id,
+          method: snapshot.method,
+          status: snapshot.status,
+          orderStatus: refreshedOrder.status === "PAID" ? "PAID" : "PAYMENT_FAILED",
+          amount: snapshot.amount as number,
+          message: snapshot.status === "SUCCESS"
+            ? "Thanh toán mô phỏng thành công"
+            : "Thanh toán mô phỏng thất bại",
+          createdAt: snapshot.createdAt,
+        };
+        setPayment(payment);
+      } catch (error) {
+        if (!controller.signal.aborted) {
+          setOrderRefreshError(error instanceof Error ? error.message : "Không thể xác minh đơn hàng.");
+        }
+      }
+    }
+
+    void refreshOrder();
+    return () => controller.abort();
+  }, [hydrated, activeOrderId, token, logout, setOrder, setPayment]);
 
   async function submitPayment() {
     if (!order || !token || submitting || payment?.status === "SUCCESS") return;
@@ -102,6 +178,7 @@ export default function CheckoutPage() {
         ) : (
           <>
             <section className="checkout-order" aria-label="Thông tin đơn hàng">
+              {orderRefreshError && <p className="order-error" role="alert">{orderRefreshError}</p>}
               <div className="checkout-order-heading">
                 <div>
                   <span className="checkout-label">MÃ ĐƠN HÀNG</span>
