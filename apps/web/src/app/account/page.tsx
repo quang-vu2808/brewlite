@@ -32,6 +32,7 @@ export default function AccountPage() {
                 Phiên đăng nhập được giữ trong bộ nhớ và sẽ kết thúc khi tải lại trang.
               </p>
               <div className="account-actions">
+                <Link className="detail-action" href="/orders">Lịch sử đơn hàng</Link>
                 <Link className="detail-action" href="/#menu">Tiếp tục chọn món</Link>
                 <button className="account-logout" onClick={logout} type="button">Đăng xuất</button>
               </div>

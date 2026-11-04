@@ -1,0 +1,22 @@
+warning: in the working copy of 'apps/api/src/main.ts', CRLF will be replaced by LF the next time Git touches it
+warning: in the working copy of 'apps/api/src/orders/orders.controller.ts', CRLF will be replaced by LF the next time Git touches it
+warning: in the working copy of 'apps/api/src/orders/orders.module.ts', CRLF will be replaced by LF the next time Git touches it
+warning: in the working copy of 'apps/api/src/orders/orders.service.spec.ts', CRLF will be replaced by LF the next time Git touches it
+warning: in the working copy of 'apps/api/src/orders/orders.service.ts', CRLF will be replaced by LF the next time Git touches it
+warning: in the working copy of 'apps/web/next.config.ts', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'apps/web/src/app/globals.css', LF will be replaced by CRLF the next time Git touches it
+ .env.example                               |  13 [32m+[m[31m-[m
+ README.md                                  |  58 [32m++++[m[31m---[m
+ apps/api/src/main.ts                       |   9 [32m+[m[31m-[m
+ apps/api/src/orders/orders.controller.ts   |  26 [32m++[m[31m-[m
+ apps/api/src/orders/orders.module.ts       |   3 [32m+[m[31m-[m
+ apps/api/src/orders/orders.service.spec.ts |  65 [32m++++++++[m
+ apps/api/src/orders/orders.service.ts      |  70 [32m+++++++[m[31m-[m
+ apps/web/next.config.ts                    |   4 [32m+[m[31m-[m
+ apps/web/src/app/account/page.tsx          |   1 [32m+[m
+ apps/web/src/app/checkout/page.test.tsx    |  71 [32m+++++++[m[31m--[m
+ apps/web/src/app/checkout/page.tsx         |  81 [32m+++++++++[m[31m-[m
+ apps/web/src/app/globals.css               | 248 [32m+++++++++++++++++++++++++++++[m
+ apps/web/src/components/site-header.tsx    |   3 [32m+[m[31m-[m
+ docker-compose.yml                         |  64 [32m++++++[m[31m--[m
+ 14 files changed, 658 insertions(+), 58 deletions(-)
