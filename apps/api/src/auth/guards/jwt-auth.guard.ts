@@ -12,6 +12,8 @@ import { UsersService } from '../../users/users.service';
 export type AuthenticatedUser = {
   id: string;
   email: string;
+  role: 'CUSTOMER' | 'STAFF';
+  loyaltyPoints: number;
 };
 
 export type AuthenticatedRequest = Request & {
@@ -60,7 +62,12 @@ export class JwtAuthGuard implements CanActivate {
       throw new UnauthorizedException('Tài khoản không còn tồn tại');
     }
 
-    request.user = { id: user.id, email: user.email };
+    request.user = {
+      id: user.id,
+      email: user.email,
+      role: user.role,
+      loyaltyPoints: user.loyaltyPoints,
+    };
     return true;
   }
 }

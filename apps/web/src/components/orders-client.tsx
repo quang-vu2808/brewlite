@@ -3,9 +3,10 @@
 import Link from "next/link";
 import { useParams } from "next/navigation";
 import { useEffect, useState } from "react";
+import { useRouter } from "next/navigation";
 import { useAuth } from "./auth-provider";
 import { SiteHeader } from "./site-header";
-import { parseCheckoutOrder, type CheckoutOrder } from "./checkout-provider";
+import { parseCheckoutOrder, type CheckoutOrder, useCheckout } from "./checkout-provider";
 
 const API_URL = (process.env.NEXT_PUBLIC_API_URL || "http://localhost:3001").replace(/\/$/, "");
 const currency = new Intl.NumberFormat("vi-VN", {
@@ -54,14 +55,19 @@ function OrderStatus({ status }: { status: CheckoutOrder["status"] }) {
 
 export function OrdersClient({ detail = false }: { detail?: boolean }) {
   const params = useParams<{ id?: string }>();
+  const router = useRouter();
   const orderId = detail ? params.id : undefined;
   const activeOrderId = orderId;
-  const { token, logout } = useAuth();
+  const { token, logout, updateUser } = useAuth();
+  const { setOrder: setCheckoutOrder } = useCheckout();
   const [orders, setOrders] = useState<OrderSnapshot[]>([]);
-  const [order, setOrder] = useState<OrderSnapshot | null>(null);
+  const [order, setLoadedOrder] = useState<OrderSnapshot | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [unauthorized, setUnauthorized] = useState(false);
+  const [statusFilter, setStatusFilter] = useState("ALL");
+  const [refreshKey, setRefreshKey] = useState(0);
+  const [actionBusy, setActionBusy] = useState(false);
 
   useEffect(() => {
     if (!token) {
@@ -94,7 +100,7 @@ export function OrdersClient({ detail = false }: { detail?: boolean }) {
           if (!isOrderSnapshot(payload) || payload.id !== activeOrderId) {
             throw new Error("Dữ liệu đơn hàng không hợp lệ.");
           }
-          setOrder(payload);
+          setLoadedOrder(payload);
         } else if (
           !Array.isArray(payload) ||
           !payload.every(isOrderSnapshot)
@@ -106,7 +112,7 @@ export function OrdersClient({ detail = false }: { detail?: boolean }) {
       } catch (loadError) {
         if (controller.signal.aborted) return;
         setError(loadError instanceof Error ? loadError.message : "Không thể kết nối dịch vụ đơn hàng.");
-        if (activeOrderId) setOrder(null);
+        if (activeOrderId) setLoadedOrder(null);
         else setOrders([]);
       } finally {
         if (!controller.signal.aborted) setLoading(false);
@@ -115,7 +121,50 @@ export function OrdersClient({ detail = false }: { detail?: boolean }) {
 
     void loadOrders();
     return () => controller.abort();
-  }, [token, activeOrderId, logout]);
+  }, [token, activeOrderId, logout, refreshKey]);
+
+  async function cancelOrder() {
+    if (!order || actionBusy || !window.confirm("Bạn có chắc muốn hủy đơn hàng này?")) return;
+    setActionBusy(true);
+    setError("");
+    try {
+      const response = await fetch(`${API_URL}/orders/${encodeURIComponent(order.id)}/cancel`, {
+        method: "POST",
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      const payload: unknown = await response.json().catch(() => null);
+      if (!response.ok) {
+        if (response.status === 401) {
+          logout();
+          setUnauthorized(true);
+        }
+        throw new Error(getErrorMessage(payload, `Không thể hủy đơn (HTTP ${response.status}).`));
+      }
+      if (typeof payload === "object" && payload !== null &&
+          "loyaltyPoints" in payload && Number.isSafeInteger(payload.loyaltyPoints)) {
+        updateUser({ loyaltyPoints: Number(payload.loyaltyPoints) });
+      }
+      setRefreshKey((current) => current + 1);
+    } catch (actionError) {
+      setError(actionError instanceof Error ? actionError.message : "Không thể hủy đơn.");
+    } finally {
+      setActionBusy(false);
+    }
+  }
+
+  function retryPayment() {
+    if (!order) return;
+    setCheckoutOrder(order);
+    router.push("/checkout");
+  }
+
+  const visibleOrders = statusFilter === "ALL"
+    ? orders
+    : orders.filter((entry) => entry.status === statusFilter);
+  const paidOrders = orders.filter((entry) =>
+    ["PAID", "PREPARING", "READY", "COMPLETED"].includes(entry.status),
+  );
+  const totalSpent = paidOrders.reduce((total, entry) => total + entry.totalAmount, 0);
 
   return (
     <div className="site-shell">
@@ -181,12 +230,36 @@ export function OrdersClient({ detail = false }: { detail?: boolean }) {
                   {order.payment.status === "SUCCESS" ? "Thành công" : "Thất bại"}
                 </div>
               )}
+              {(order.discountAmount ?? 0) > 0 && (
+                <div className="order-discount-lines">
+                  <p><span>Tạm tính</span><strong>{currency.format(order.subtotalAmount ?? order.totalAmount + (order.discountAmount ?? 0) + (order.loyaltyDiscountAmount ?? 0))}</strong></p>
+                  {order.promotionCode && <p><span>Mã {order.promotionCode}</span><strong>−{currency.format(order.discountAmount ?? 0)}</strong></p>}
+                </div>
+              )}
+              {(order.loyaltyDiscountAmount ?? 0) > 0 && (
+                <div className="order-discount-lines">
+                  <p><span>Đổi {order.redeemedPoints} điểm</span><strong>−{currency.format(order.loyaltyDiscountAmount ?? 0)}</strong></p>
+                </div>
+              )}
               <div className="order-detail-total">
                 <span>Tổng cộng</span><strong>{currency.format(order.totalAmount)}</strong>
               </div>
+              {(order.loyaltyPointsAwarded ?? 0) > 0 && (
+                <p className="order-points-earned">Đã cộng {order.loyaltyPointsAwarded} điểm thành viên</p>
+              )}
+              {error && <p className="order-error" role="alert">{error}</p>}
               <div className="order-detail-actions">
                 <Link className="detail-action" href="/orders">Lịch sử đơn hàng</Link>
-                {order.status === "PENDING" && <Link className="continue-shopping" href="/checkout">Tiếp tục thanh toán</Link>}
+                {(order.status === "PENDING" || order.status === "PAYMENT_FAILED") && (
+                  <button className="continue-shopping order-action-button" type="button" onClick={retryPayment}>
+                    {order.status === "PAYMENT_FAILED" ? "Thử thanh toán lại" : "Tiếp tục thanh toán"}
+                  </button>
+                )}
+                {["PENDING", "PAYMENT_FAILED", "PAID"].includes(order.status) && (
+                  <button className="order-cancel-button" type="button" onClick={cancelOrder} disabled={actionBusy}>
+                    {actionBusy ? "Đang hủy..." : "Hủy đơn hàng"}
+                  </button>
+                )}
               </div>
             </section>
           ) : null
@@ -198,8 +271,29 @@ export function OrdersClient({ detail = false }: { detail?: boolean }) {
             <Link className="detail-action" href="/#menu">Khám phá menu</Link>
           </section>
         ) : (
-          <section className="orders-list" aria-label="Danh sách đơn hàng">
-            {orders.map((entry) => (
+          <>
+            <section className="orders-summary" aria-label="Tóm tắt đơn hàng">
+              <article><span>Tổng số đơn</span><strong>{orders.length}</strong></article>
+              <article><span>Đã thanh toán</span><strong>{paidOrders.length}</strong></article>
+              <article><span>Tổng chi tiêu</span><strong>{currency.format(totalSpent)}</strong></article>
+            </section>
+            <label className="orders-filter">
+              <span>Lọc trạng thái</span>
+              <select value={statusFilter} onChange={(event) => setStatusFilter(event.target.value)}>
+                <option value="ALL">Tất cả đơn</option>
+                <option value="PENDING">Chờ thanh toán</option>
+                <option value="PAYMENT_FAILED">Thanh toán thất bại</option>
+                <option value="PAID">Đã thanh toán</option>
+                <option value="PREPARING">Đang pha chế</option>
+                <option value="READY">Sẵn sàng</option>
+                <option value="COMPLETED">Hoàn tất</option>
+                <option value="CANCELLED">Đã hủy</option>
+              </select>
+            </label>
+            {visibleOrders.length === 0 ? (
+              <section className="state-panel orders-state"><h2>Không có đơn hàng phù hợp</h2><p>Thử chọn trạng thái khác.</p></section>
+            ) : <section className="orders-list" aria-label="Danh sách đơn hàng">
+            {visibleOrders.map((entry) => (
               <Link className="order-list-card" href={`/orders/${encodeURIComponent(entry.id)}`} key={entry.id}>
                 <div className="order-list-top">
                   <span className="order-code">{entry.orderCode}</span>
@@ -211,7 +305,8 @@ export function OrdersClient({ detail = false }: { detail?: boolean }) {
                 </div>
               </Link>
             ))}
-          </section>
+            </section>}
+          </>
         )}
       </main>
       <footer className="footer">

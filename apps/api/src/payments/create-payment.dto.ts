@@ -1,4 +1,4 @@
-import { IsEnum, IsUUID } from 'class-validator';
+import { IsBoolean, IsEnum, IsOptional, IsUUID } from 'class-validator';
 import { PaymentMethod } from './payment.entity';
 
 export class CreatePaymentDto {
@@ -7,4 +7,8 @@ export class CreatePaymentDto {
 
   @IsEnum(PaymentMethod)
   method!: PaymentMethod;
+
+  @IsOptional()
+  @IsBoolean()
+  simulateFailure?: boolean;
 }

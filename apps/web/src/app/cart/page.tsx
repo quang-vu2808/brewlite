@@ -7,6 +7,8 @@ import { SiteHeader } from "../../components/site-header";
 import { useCart } from "../../components/cart-provider";
 import { useAuth } from "../../components/auth-provider";
 import { parseCheckoutOrder, useCheckout } from "../../components/checkout-provider";
+import { fetchInventory, type InventoryRecord } from "../../lib/inventory";
+import { useEffect } from "react";
 
 const API_URL = (process.env.NEXT_PUBLIC_API_URL || "http://localhost:3001").replace(/\/$/, "");
 const formatter = new Intl.NumberFormat("vi-VN", {
@@ -18,14 +20,129 @@ const formatter = new Intl.NumberFormat("vi-VN", {
 export default function CartPage() {
   const router = useRouter();
   const { items, hydrated, totalItems, totalPrice, increaseQuantity, decreaseQuantity, removeItem } = useCart();
-  const { token, user, logout } = useAuth();
+  const { token, user, logout, updateUser } = useAuth();
   const { setOrder } = useCheckout();
   const [submitting, setSubmitting] = useState(false);
   const [orderError, setOrderError] = useState("");
   const [requiresAuthentication, setRequiresAuthentication] = useState(false);
+  const [promoCode, setPromoCode] = useState("");
+  const [redeemPoints, setRedeemPoints] = useState("");
+  const [appliedPromoCode, setAppliedPromoCode] = useState("");
+  const [appliedRedeemPoints, setAppliedRedeemPoints] = useState(0);
+  const [preview, setPreview] = useState<{
+    subtotalAmount: number;
+    discountAmount: number;
+    redeemedPoints: number;
+    loyaltyDiscountAmount: number;
+    totalAmount: number;
+    projectedLoyaltyPoints: number;
+  } | null>(null);
+  const [previewLoading, setPreviewLoading] = useState(false);
+  const [previewError, setPreviewError] = useState("");
+  const [inventory, setInventory] = useState<Map<number, InventoryRecord>>(new Map());
+  const [inventoryError, setInventoryError] = useState("");
+
+  useEffect(() => {
+    const controller = new AbortController();
+    void fetchInventory(controller.signal).then((records) => {
+      if (controller.signal.aborted) return;
+      setInventory(new Map(records.map((record) => [record.productId, record])));
+      setInventoryError("");
+    }).catch((error: unknown) => {
+      if (!controller.signal.aborted) {
+        setInventoryError(error instanceof Error ? error.message : "Không thể tải tồn kho");
+      }
+    });
+    return () => controller.abort();
+  }, []);
+
+  useEffect(() => {
+    if (!hydrated || !token || items.length === 0) {
+      const resetTimer = window.setTimeout(() => {
+        setPreview(null);
+        setPreviewError("");
+        setPreviewLoading(false);
+      }, 0);
+      return () => window.clearTimeout(resetTimer);
+    }
+    const controller = new AbortController();
+    const timer = window.setTimeout(() => {
+      setPreviewLoading(true);
+      setPreviewError("");
+      void fetch(`${API_URL}/orders/preview`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({
+          items: items.map((item) => ({
+            productId: Number(item.productId),
+            size: item.size,
+            toppings: item.toppings.map((topping) => topping.id),
+            quantity: item.quantity,
+          })),
+          ...(appliedPromoCode ? { promoCode: appliedPromoCode } : {}),
+          ...(appliedRedeemPoints > 0 ? { redeemPoints: appliedRedeemPoints } : {}),
+        }),
+        signal: controller.signal,
+      }).then(async (response) => {
+        const payload: unknown = await response.json().catch(() => null);
+        if (!response.ok) {
+          if (response.status === 401) logout();
+          const message = typeof payload === "object" && payload !== null &&
+            "message" in payload && typeof payload.message === "string"
+            ? payload.message
+            : `Không thể xem trước giá (HTTP ${response.status}).`;
+          throw new Error(message);
+        }
+        if (typeof payload !== "object" || payload === null ||
+            !("subtotalAmount" in payload) || !("discountAmount" in payload) ||
+            !("redeemedPoints" in payload) || !("loyaltyDiscountAmount" in payload) ||
+            !("totalAmount" in payload) || !("projectedLoyaltyPoints" in payload)) {
+          throw new Error("Dữ liệu xem trước giá không hợp lệ.");
+        }
+        const values = [
+          payload.subtotalAmount,
+          payload.discountAmount,
+          payload.redeemedPoints,
+          payload.loyaltyDiscountAmount,
+          payload.totalAmount,
+          payload.projectedLoyaltyPoints,
+        ];
+        if (values.some((value) => typeof value !== "number" || !Number.isSafeInteger(value) || value < 0)) {
+          throw new Error("Số tiền xem trước không hợp lệ.");
+        }
+        setPreview(payload as typeof preview);
+      }).catch((error: unknown) => {
+        if (!controller.signal.aborted) {
+          setPreview(null);
+          setPreviewError(error instanceof Error ? error.message : "Không thể xem trước giá.");
+        }
+      }).finally(() => {
+        if (!controller.signal.aborted) setPreviewLoading(false);
+      });
+    }, 250);
+    return () => {
+      window.clearTimeout(timer);
+      controller.abort();
+    };
+  }, [hydrated, token, items, appliedPromoCode, appliedRedeemPoints, logout]);
+
+  const stockShortages = items.reduce((shortages, item) => {
+    const productId = Number(item.productId);
+    const available = inventory.get(productId)?.stock;
+    const ordered = items.filter((line) => Number(line.productId) === productId)
+      .reduce((sum, line) => sum + line.quantity, 0);
+    if (available === undefined || ordered > available) shortages.push(item.name);
+    return shortages;
+  }, [] as string[]);
 
   async function createOrder() {
-    if (submitting || items.length === 0 || !token) return;
+    if (submitting || items.length === 0 || !token ||
+        (previewError && (appliedPromoCode || appliedRedeemPoints > 0)) ||
+        (appliedPromoCode !== "" && preview?.discountAmount === 0) ||
+        (appliedRedeemPoints > 0 && preview?.redeemedPoints !== appliedRedeemPoints)) return;
     setSubmitting(true);
     setOrderError("");
     setRequiresAuthentication(false);
@@ -44,6 +161,8 @@ export default function CartPage() {
             toppings: item.toppings.map((topping) => topping.id),
             quantity: item.quantity,
           })),
+          ...(appliedPromoCode ? { promoCode: appliedPromoCode } : {}),
+          ...(appliedRedeemPoints > 0 ? { redeemPoints: appliedRedeemPoints } : {}),
         }),
       });
 
@@ -68,6 +187,7 @@ export default function CartPage() {
       }
 
       setOrder(order);
+      if (order.loyaltyPoints !== undefined) updateUser({ loyaltyPoints: order.loyaltyPoints });
       router.push("/checkout");
     } catch (error) {
       setOrderError(error instanceof Error ? error.message : "Không thể tạo đơn hàng");
@@ -137,14 +257,99 @@ export default function CartPage() {
             <aside className="cart-summary" aria-label="Tổng kết đơn hàng">
               <h2>Tổng giỏ hàng</h2>
               <p><span>Tạm tính ({totalItems} sản phẩm)</span><strong>{formatter.format(totalPrice)}</strong></p>
-              <p className="cart-total"><span>Tổng cộng</span><strong>{formatter.format(totalPrice)}</strong></p>
+              <label className="cart-promo-field">
+                <span>Mã khuyến mãi</span>
+                <input
+                  type="text"
+                  value={promoCode}
+                  onChange={(event) => {
+                    setPromoCode(event.target.value);
+                    setAppliedPromoCode("");
+                  }}
+                  placeholder="Ví dụ: BREW10"
+                  maxLength={40}
+                  autoComplete="off"
+                />
+              </label>
+              <button
+                className="cart-apply-button"
+                type="button"
+                disabled={!token || !promoCode.trim() || previewLoading}
+                onClick={() => setAppliedPromoCode(promoCode.trim().toUpperCase())}
+              >
+                {previewLoading ? "Đang kiểm tra..." : "Áp dụng mã"}
+              </button>
+              {appliedPromoCode && !previewError && preview && (
+                <small className="cart-preview-success" role="status">
+                  {preview.discountAmount > 0
+                    ? `Đã áp dụng ${appliedPromoCode}, giảm ${formatter.format(preview.discountAmount)}`
+                    : `Mã ${appliedPromoCode} không được áp dụng`}
+                </small>
+              )}
+              <label className="cart-promo-field" htmlFor="redeem-points">
+                <span>Đổi điểm thành viên</span>
+                <input
+                  id="redeem-points"
+                  type="number"
+                  min="0"
+                  max={user?.loyaltyPoints ?? 0}
+                  step="1"
+                  value={redeemPoints}
+                  onChange={(event) => {
+                    setRedeemPoints(event.target.value);
+                    setAppliedRedeemPoints(0);
+                  }}
+                  disabled={!user || user.loyaltyPoints === 0}
+                />
+              </label>
+              <p className="cart-promo-hint">Bạn có <strong>{user?.loyaltyPoints ?? 0} điểm</strong>; 1 điểm = 100đ.</p>
+              <div className="cart-point-actions">
+                <button
+                  type="button"
+                  className="cart-apply-button"
+                  disabled={!token || !redeemPoints || previewLoading}
+                  onClick={() => setAppliedRedeemPoints(Number(redeemPoints))}
+                >
+                  Áp dụng điểm
+                </button>
+                <button
+                  type="button"
+                  className="cart-apply-button is-secondary"
+                  disabled={!user || !preview}
+                  onClick={() => {
+                    const remaining = Math.max(0, (preview?.subtotalAmount ?? totalPrice) - (preview?.discountAmount ?? 0));
+                    const maximum = Math.min(user?.loyaltyPoints ?? 0, Math.floor(remaining / 100));
+                    setRedeemPoints(String(maximum));
+                    setAppliedRedeemPoints(maximum);
+                  }}
+                >
+                  Dùng tối đa
+                </button>
+              </div>
+              <div className="cart-stock-notice" role={inventoryError || stockShortages.length > 0 ? "alert" : "status"}>
+                {inventoryError || (stockShortages.length > 0
+                  ? `Tồn kho chưa đủ cho: ${[...new Set(stockShortages)].join(", ")}`
+                  : "Tồn kho đã được kiểm tra")}
+              </div>
+              <div className="cart-price-breakdown" aria-live="polite">
+                <p><span>Tạm tính</span><strong>{formatter.format(preview?.subtotalAmount ?? totalPrice)}</strong></p>
+                {(preview?.discountAmount ?? 0) > 0 && <p><span>Mã {appliedPromoCode}</span><strong>−{formatter.format(preview?.discountAmount ?? 0)}</strong></p>}
+                {(preview?.redeemedPoints ?? 0) > 0 && <>
+                  <p><span>Điểm sẽ sử dụng</span><strong>{preview?.redeemedPoints} điểm</strong></p>
+                  <p><span>Giảm bằng điểm</span><strong>−{formatter.format(preview?.loyaltyDiscountAmount ?? 0)}</strong></p>
+                </>}
+                <p className="cart-total"><span>Tổng cần thanh toán</span><strong>{formatter.format(preview?.totalAmount ?? totalPrice)}</strong></p>
+                {previewLoading && <small role="status">Đang cập nhật giá từ máy chủ...</small>}
+                {previewError && <p className="order-error" role="alert">{previewError}</p>}
+                {preview && <small>Dự kiến nhận {preview.projectedLoyaltyPoints} điểm sau khi thanh toán thành công.</small>}
+              </div>
               {!user ? (
                 <div className="cart-auth-prompt">
                   <p>Đăng nhập để tiếp tục tạo đơn. Giỏ hàng của bạn vẫn được giữ nguyên.</p>
                   <Link className="detail-action create-order-button" href="/login?returnTo=%2Fcart">Đăng nhập để đặt đơn</Link>
                 </div>
               ) : (
-                <button className="detail-action create-order-button" type="button" onClick={createOrder} disabled={submitting || !hydrated}>
+                <button className="detail-action create-order-button" type="button" onClick={createOrder} disabled={submitting || !hydrated || !!inventoryError || stockShortages.length > 0 || previewLoading || !!previewError || (appliedPromoCode && !preview?.discountAmount) || (appliedRedeemPoints > 0 && preview?.redeemedPoints !== appliedRedeemPoints)}>
                   {submitting ? "Đang tạo đơn..." : "Tạo đơn hàng"}
                 </button>
               )}

@@ -34,12 +34,24 @@ describe('OrdersService', () => {
   );
   const dataSource = { transaction } as unknown as DataSource;
   const productsService = new ProductsService();
+  const inventory = {
+    reserve: jest.fn().mockResolvedValue(undefined),
+    release: jest.fn().mockResolvedValue(undefined),
+  };
+  const ingredients = {
+    reserveForOrder: jest.fn().mockResolvedValue([]),
+    saveOrderConsumption: jest.fn().mockResolvedValue(undefined),
+    releaseOrderConsumption: jest.fn().mockResolvedValue(undefined),
+  };
   const findOne = jest.spyOn(productsService, 'findOne');
-  const service = new OrdersService(dataSource, productsService);
+  const service = new OrdersService(dataSource, productsService, inventory, ingredients);
 
   beforeEach(() => {
     save.mockClear();
     transaction.mockClear();
+    inventory.reserve.mockClear();
+    ingredients.reserveForOrder.mockClear();
+    ingredients.saveOrderConsumption.mockClear();
     findOne.mockReset();
     findOne.mockImplementation((id) => id === product.id ? product : undefined);
   });
@@ -72,8 +84,26 @@ describe('OrdersService', () => {
     expect(save).toHaveBeenNthCalledWith(1, OrderEntity, {
       status: 'PENDING',
       totalAmount: 70000,
+      subtotalAmount: 70000,
+      discountAmount: 0,
+      loyaltyDiscountAmount: 0,
+      redeemedPoints: 0,
+      promotionCode: null,
+      loyaltyPointsAwarded: 0,
+      inventoryReleasedAt: null,
+      promotionUsageReleasedAt: null,
       userId: 'user-id',
     });
+    expect(inventory.reserve).toHaveBeenCalledWith(expect.anything(), 1, 2);
+    expect(ingredients.reserveForOrder).toHaveBeenCalledWith(
+      expect.anything(),
+      new Map([[1, 2]]),
+    );
+    expect(ingredients.saveOrderConsumption).toHaveBeenCalledWith(
+      expect.anything(),
+      'order-id',
+      [],
+    );
     expect(save.mock.calls[1][0]).toBe(OrderItemEntity);
     expect(save.mock.calls[1][1]).toEqual([expect.objectContaining({
       productId: 1,
@@ -100,6 +130,8 @@ describe('OrdersService', () => {
         userId: 'user-id',
         status: 'PAID',
         totalAmount: 35000,
+        discountAmount: 0,
+        promotionCode: null,
         createdAt,
         items: [],
       })])
@@ -114,12 +146,20 @@ describe('OrdersService', () => {
     const listService = new OrdersService(
       { manager: { find } } as unknown as DataSource,
       productsService,
+      inventory,
+      ingredients,
     );
 
     await expect(listService.findMine('user-id')).resolves.toEqual([{
       id: 'order-id',
       orderCode: 'order-id',
       status: 'PAID',
+      subtotalAmount: 35000,
+      discountAmount: 0,
+      loyaltyDiscountAmount: 0,
+      redeemedPoints: 0,
+      loyaltyPointsAwarded: 0,
+      promotionCode: null,
       totalAmount: 35000,
       createdAt,
       items: [],
@@ -147,6 +187,8 @@ describe('OrdersService', () => {
     const detailService = new OrdersService(
       { manager: { findOne } } as unknown as DataSource,
       productsService,
+      inventory,
+      ingredients,
     );
 
     await expect(detailService.findOneForUser('order-id', 'user-id'))

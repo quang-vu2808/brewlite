@@ -1,7 +1,8 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
+import { QRCodeSVG } from "qrcode.react";
 import { SiteHeader } from "../../components/site-header";
 import { useAuth } from "../../components/auth-provider";
 import { useCart } from "../../components/cart-provider";
@@ -13,6 +14,14 @@ import {
 } from "../../components/checkout-provider";
 
 type PaymentMethod = "WALLET" | "CARD";
+type CheckoutStep = "SELECT_METHOD" | "WAITING_FOR_PAYMENT";
+type IdempotencyAttempt = {
+  orderId: string;
+  method: PaymentMethod;
+  simulateFailure: boolean;
+  key: string;
+  storageKey: string;
+};
 
 const API_URL = (process.env.NEXT_PUBLIC_API_URL || "http://localhost:3001").replace(/\/$/, "");
 const formatter = new Intl.NumberFormat("vi-VN", {
@@ -35,14 +44,43 @@ function errorMessage(value: unknown, fallback: string): string {
 
 export default function CheckoutPage() {
   const { hydrated, order, payment, setOrder, setPayment } = useCheckout();
-  const { token, user, logout } = useAuth();
+  const { token, user, logout, updateUser } = useAuth();
   const { clearCart } = useCart();
   const [method, setMethod] = useState<PaymentMethod>("WALLET");
+  const [step, setStep] = useState<CheckoutStep>("SELECT_METHOD");
   const [submitting, setSubmitting] = useState(false);
   const [requestError, setRequestError] = useState("");
   const [requiresAuthentication, setRequiresAuthentication] = useState(false);
   const [orderRefreshError, setOrderRefreshError] = useState("");
+  const [demoFailureEnabled, setDemoFailureEnabled] = useState(false);
+  const [simulateFailure, setSimulateFailure] = useState(false);
+  const [paymentConfigError, setPaymentConfigError] = useState("");
+  const idempotencyKeyRef = useRef<IdempotencyAttempt | null>(null);
   const activeOrderId = order?.id;
+
+  useEffect(() => {
+    const controller = new AbortController();
+    void fetch(`${API_URL}/payments/config`, { signal: controller.signal, cache: "no-store" })
+      .then(async (response) => {
+        const payload: unknown = await response.json().catch(() => null);
+        if (!response.ok) throw new Error(`Không thể tải cấu hình thanh toán (HTTP ${response.status}).`);
+        if (typeof payload !== "object" || payload === null ||
+            typeof (payload as { demoFailureEnabled?: unknown }).demoFailureEnabled !== "boolean") {
+          throw new Error("Cấu hình thanh toán không hợp lệ.");
+        }
+        if (!controller.signal.aborted) {
+          setDemoFailureEnabled((payload as { demoFailureEnabled: boolean }).demoFailureEnabled);
+          setPaymentConfigError("");
+        }
+      })
+      .catch((error: unknown) => {
+        if (!controller.signal.aborted) {
+          setPaymentConfigError(error instanceof Error ? error.message : "Không thể tải cấu hình thanh toán.");
+          setDemoFailureEnabled(false);
+        }
+      });
+    return () => controller.abort();
+  }, []);
 
   useEffect(() => {
     if (!hydrated || !activeOrderId || !token) return;
@@ -106,6 +144,13 @@ export default function CheckoutPage() {
           createdAt: snapshot.createdAt,
         };
         setPayment(payment);
+        for (const paymentMethod of ["WALLET", "CARD"] as const) {
+          for (const failure of [false, true]) {
+            window.sessionStorage.removeItem(
+              `brewlite-payment-key:${currentOrderId}:${paymentMethod}:${failure}`,
+            );
+          }
+        }
       } catch (error) {
         if (!controller.signal.aborted) {
           setOrderRefreshError(error instanceof Error ? error.message : "Không thể xác minh đơn hàng.");
@@ -118,19 +163,32 @@ export default function CheckoutPage() {
   }, [hydrated, activeOrderId, token, logout, setOrder, setPayment]);
 
   async function submitPayment() {
-    if (!order || !token || submitting || payment?.status === "SUCCESS") return;
+    if (!order || !token || submitting || payment?.status === "SUCCESS" || step !== "WAITING_FOR_PAYMENT") return;
+    const requestFailure = demoFailureEnabled && simulateFailure;
     setSubmitting(true);
     setRequestError("");
     setRequiresAuthentication(false);
 
     try {
+      const storageKey = `brewlite-payment-key:${order.id}:${method}:${requestFailure}`;
+      if (
+        !idempotencyKeyRef.current ||
+        idempotencyKeyRef.current.orderId !== order.id ||
+        idempotencyKeyRef.current.method !== method ||
+        idempotencyKeyRef.current.simulateFailure !== requestFailure
+      ) {
+        const key = window.sessionStorage.getItem(storageKey) ?? window.crypto.randomUUID();
+        window.sessionStorage.setItem(storageKey, key);
+        idempotencyKeyRef.current = { orderId: order.id, method, simulateFailure: requestFailure, key, storageKey };
+      }
       const response = await fetch(`${API_URL}/payments`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
+          "Idempotency-Key": idempotencyKeyRef.current.key,
           Authorization: `Bearer ${token}`,
         },
-        body: JSON.stringify({ orderId: order.id, method }),
+        body: JSON.stringify({ orderId: order.id, method, ...(requestFailure ? { simulateFailure: true } : {}) }),
       });
       const payload: unknown = await response.json().catch(() => null);
 
@@ -148,6 +206,11 @@ export default function CheckoutPage() {
       }
 
       setPayment(result);
+      window.sessionStorage.removeItem(idempotencyKeyRef.current.storageKey);
+      idempotencyKeyRef.current = null;
+      if (result.loyaltyPoints !== undefined) {
+        updateUser({ loyaltyPoints: result.loyaltyPoints });
+      }
       if (result.status === "SUCCESS") clearCart();
     } catch (error) {
       setRequestError(error instanceof Error ? error.message : "Không thể kết nối dịch vụ thanh toán.");
@@ -204,6 +267,16 @@ export default function CheckoutPage() {
                     <strong>{formatter.format(item.lineTotal)}</strong>
                   </div>
                 ))}
+              </div>
+              <div className="checkout-price-breakdown">
+                <p><span>Tạm tính</span><strong>{formatter.format(order.subtotalAmount ?? order.totalAmount + (order.discountAmount ?? 0) + (order.loyaltyDiscountAmount ?? 0))}</strong></p>
+                {(order.discountAmount ?? 0) > 0 && (
+                  <p><span>Mã {order.promotionCode}</span><strong>−{formatter.format(order.discountAmount ?? 0)}</strong></p>
+                )}
+                {(order.redeemedPoints ?? 0) > 0 && <>
+                  <p><span>Điểm sẽ sử dụng</span><strong>{order.redeemedPoints} điểm</strong></p>
+                  <p><span>Giảm bằng điểm</span><strong>−{formatter.format(order.loyaltyDiscountAmount ?? 0)}</strong></p>
+                </>}
               </div>
               <div className="checkout-total">
                 <span>Tổng thanh toán</span>
@@ -277,6 +350,40 @@ export default function CheckoutPage() {
                       </label>
                     </div>
 
+                    {step === "WAITING_FOR_PAYMENT" && (
+                      <>
+                        <section className="mock-qr-panel" aria-label="Mã QR thanh toán mô phỏng">
+                          <div>
+                            <QRCodeSVG
+                              value={`BREWLITE-DEMO://${method.toLowerCase()}?order=${encodeURIComponent(order.id)}&amount=${order.totalAmount}&provider=MOCK`}
+                              size={156}
+                              level="M"
+                              title="Mã QR chỉ dùng cho bản mô phỏng BrewLite"
+                            />
+                          </div>
+                          <p>Mã QR minh họa cho giao dịch mô phỏng; không liên kết ngân hàng hoặc thu tiền thật.</p>
+                          <p>Mã đơn <strong>{order.orderCode}</strong> · {formatter.format(order.totalAmount)}</p>
+                        </section>
+                        {demoFailureEnabled && (
+                          <label className="payment-demo-failure">
+                            <input
+                              type="checkbox"
+                              checked={simulateFailure}
+                              onChange={(event) => setSimulateFailure(event.target.checked)}
+                            />
+                            <span>Mô phỏng thanh toán thất bại</span>
+                          </label>
+                        )}
+                        {paymentConfigError && <p className="checkout-config-note" role="status">{paymentConfigError} Tùy chọn giả lập lỗi đã bị tắt.</p>}
+                        <button className="payment-back-button" type="button" disabled={submitting} onClick={() => {
+                          setStep("SELECT_METHOD");
+                          setRequestError("");
+                        }}>
+                          ← Quay lại chọn phương thức
+                        </button>
+                      </>
+                    )}
+
                     {requestError && <p className="order-error" role="alert">{requestError}</p>}
                     {requiresAuthentication && (
                       <Link className="cart-login-retry" href="/login?returnTo=%2Fcheckout">
@@ -286,11 +393,18 @@ export default function CheckoutPage() {
                     <button
                       className="detail-action payment-submit"
                       disabled={submitting || order.status === "PAID"}
-                      onClick={submitPayment}
+                      onClick={() => {
+                        if (step === "SELECT_METHOD") {
+                          setRequestError("");
+                          setStep("WAITING_FOR_PAYMENT");
+                        } else {
+                          void submitPayment();
+                        }
+                      }}
                       type="button"
                     >
-                      {submitting
-                        ? "Đang xử lý..."
+                      {submitting ? "Đang xác nhận..." : step === "WAITING_FOR_PAYMENT"
+                        ? "Xác nhận thanh toán mô phỏng"
                         : `Thanh toán ${formatter.format(order.totalAmount)}`}
                     </button>
                     {order.status === "PAID" && (

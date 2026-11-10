@@ -108,6 +108,10 @@ function mockOrderResponse() {
   return mockJsonResponse({ ...order, payment: null }, 200);
 }
 
+function mockPaymentConfigResponse(demoFailureEnabled = false) {
+  return mockJsonResponse({ provider: "MOCK", demoFailureEnabled }, 200);
+}
+
 describe("CheckoutPage", () => {
   beforeEach(() => {
     window.sessionStorage.clear();
@@ -122,11 +126,14 @@ describe("CheckoutPage", () => {
   });
 
   it("offers wallet and card, sends only the order and method, and clears cart after success", async () => {
-    const fetchMock = vi.fn((...args: Parameters<typeof fetch>) => Promise.resolve(
-      String(args[0]).endsWith(`/orders/${order.id}`)
+    const fetchMock = vi.fn((...args: Parameters<typeof fetch>) => {
+      const url = String(args[0]);
+      return Promise.resolve(url.endsWith(`/orders/${order.id}`)
         ? mockOrderResponse()
-        : mockJsonResponse(paymentResponse("SUCCESS", "CARD")),
-    ));
+        : url.endsWith("/payments/config")
+          ? mockPaymentConfigResponse()
+          : mockJsonResponse(paymentResponse("SUCCESS", "CARD")));
+    });
     vi.stubGlobal("fetch", fetchMock);
     renderCheckout();
 
@@ -136,13 +143,18 @@ describe("CheckoutPage", () => {
     expect((screen.getByRole("radio", { name: /Thẻ/ }) as HTMLInputElement).checked).toBe(true);
 
     fireEvent.click(screen.getByRole("button", { name: /Thanh toán/ }));
+    await screen.findByRole("region", { name: "Mã QR thanh toán mô phỏng" });
+    expect(screen.queryByRole("checkbox", { name: /Mô phỏng thanh toán thất bại/ })).toBeNull();
+    expect(fetchMock.mock.calls.some(([url]) => String(url).endsWith("/payments"))).toBe(false);
+    fireEvent.click(screen.getByRole("button", { name: "Xác nhận thanh toán mô phỏng" }));
 
     await screen.findByRole("heading", { name: "Thanh toán thành công" });
-    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(fetchMock).toHaveBeenCalledTimes(4);
     const paymentCall = fetchMock.mock.calls.find(([url]) => String(url).endsWith("/payments"));
     expect(paymentCall?.[0]).toBe("http://localhost:3001/payments");
     const request = paymentCall?.[1] as RequestInit;
-    expect(request.headers).toEqual({
+    expect((request.headers as Record<string, string>)["Idempotency-Key"]).toMatch(/^[0-9a-f-]{36}$/i);
+    expect(request.headers).toMatchObject({
       "Content-Type": "application/json",
       Authorization: "Bearer test-access-token",
     });
@@ -154,29 +166,62 @@ describe("CheckoutPage", () => {
   });
 
   it("shows a deterministic failure and keeps the cart for a retry on the same order", async () => {
-    const fetchMock = vi.fn((...args: Parameters<typeof fetch>) => Promise.resolve(
-      String(args[0]).endsWith(`/orders/${order.id}`)
+    const fetchMock = vi.fn((...args: Parameters<typeof fetch>) => {
+      const url = String(args[0]);
+      return Promise.resolve(url.endsWith(`/orders/${order.id}`)
         ? mockOrderResponse()
-        : mockJsonResponse(paymentResponse("FAILED")),
-    ));
+        : url.endsWith("/payments/config")
+          ? mockPaymentConfigResponse()
+          : mockJsonResponse(paymentResponse("FAILED")));
+    });
     vi.stubGlobal("fetch", fetchMock);
     renderCheckout();
 
     await screen.findByRole("radiogroup", { name: "Phương thức thanh toán" });
     fireEvent.click(screen.getByRole("button", { name: "Add test cart item" }));
     fireEvent.click(screen.getByRole("button", { name: /Thanh toán/ }));
+    fireEvent.click(screen.getByRole("button", { name: "Xác nhận thanh toán mô phỏng" }));
 
     await screen.findByRole("heading", { name: "Thanh toán chưa thành công" });
     expect(screen.getAllByText(/PAYMENT_FAILED/)).toHaveLength(2);
     expect(screen.getByTestId("cart-count").textContent).toBe("1");
-    expect((screen.getByRole("button", { name: /Thanh toán/ }) as HTMLButtonElement).disabled).toBe(false);
+    expect((screen.getByRole("button", { name: "Xác nhận thanh toán mô phỏng" }) as HTMLButtonElement).disabled).toBe(false);
 
-    fireEvent.click(screen.getByRole("button", { name: /Thanh toán/ }));
-    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(3));
+    fireEvent.click(screen.getByRole("button", { name: "Xác nhận thanh toán mô phỏng" }));
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(5));
     const paymentCall = fetchMock.mock.calls.filter(([url]) => String(url).endsWith("/payments")).at(-1);
     expect(JSON.parse(String(paymentCall?.[1]?.body))).toEqual({
       orderId: order.id,
       method: "WALLET",
+    });
+  });
+
+  it("shows the demo failure switch only when enabled and sends the selected outcome", async () => {
+    const fetchMock = vi.fn((...args: Parameters<typeof fetch>) => {
+      const url = String(args[0]);
+      return Promise.resolve(url.endsWith(`/orders/${order.id}`)
+        ? mockOrderResponse()
+        : url.endsWith("/payments/config")
+          ? mockPaymentConfigResponse(true)
+          : mockJsonResponse(paymentResponse("FAILED")));
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    renderCheckout();
+
+    await screen.findByRole("radiogroup", { name: "Phương thức thanh toán" });
+    expect(document.querySelector("svg title")).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: /Thanh toán/ }));
+    const demoOption = await screen.findByRole("checkbox", { name: /Mô phỏng thanh toán thất bại/ });
+    expect(document.querySelector("svg title")).toBeTruthy();
+    fireEvent.click(demoOption);
+    fireEvent.click(screen.getByRole("button", { name: "Xác nhận thanh toán mô phỏng" }));
+
+    await screen.findByRole("heading", { name: "Thanh toán chưa thành công" });
+    const paymentCall = fetchMock.mock.calls.find(([url]) => String(url).endsWith("/payments"));
+    expect(JSON.parse(String(paymentCall?.[1]?.body))).toEqual({
+      orderId: order.id,
+      method: "WALLET",
+      simulateFailure: true,
     });
   });
 
@@ -186,18 +231,20 @@ describe("CheckoutPage", () => {
       if (String(args[0]).endsWith(`/orders/${order.id}`)) {
         return Promise.resolve(mockOrderResponse());
       }
-      return new Promise((resolve) => {
-        resolveResponse = resolve;
-      });
+      if (String(args[0]).endsWith("/payments/config")) {
+        return Promise.resolve(mockPaymentConfigResponse());
+      }
+      return new Promise((resolve) => { resolveResponse = resolve; });
     });
     vi.stubGlobal("fetch", fetchMock);
     renderCheckout();
     await screen.findByRole("radiogroup", { name: "Phương thức thanh toán" });
 
-    const button = screen.getByRole("button", { name: /Thanh toán/ });
+    fireEvent.click(screen.getByRole("button", { name: /Thanh toán/ }));
+    const button = screen.getByRole("button", { name: "Xác nhận thanh toán mô phỏng" });
     fireEvent.click(button);
     fireEvent.click(button);
-    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(fetchMock).toHaveBeenCalledTimes(4);
     expect((button as HTMLButtonElement).disabled).toBe(true);
 
     resolveResponse?.(mockJsonResponse(paymentResponse("SUCCESS")));
@@ -213,10 +260,11 @@ describe("CheckoutPage", () => {
 
     await screen.findByRole("radiogroup", { name: "Phương thức thanh toán" });
     fireEvent.click(screen.getByRole("button", { name: /Thanh toán/ }));
+    fireEvent.click(screen.getByRole("button", { name: "Xác nhận thanh toán mô phỏng" }));
 
-    expect((await screen.findByRole("alert")).textContent).toContain(
-      "Dịch vụ tạm thời không khả dụng",
-    );
+    await waitFor(() => expect(screen.getAllByRole("alert").some((element) =>
+      element.textContent?.includes("Dịch vụ tạm thời không khả dụng"),
+    )).toBe(true));
     expect(screen.getByText("PENDING")).toBeTruthy();
   });
 
@@ -232,17 +280,18 @@ describe("CheckoutPage", () => {
         createdAt: "2026-01-01T00:01:00.000Z",
       },
     };
-    const fetchMock = vi.fn((...args: Parameters<typeof fetch>) =>
-      String(args[0]).endsWith(`/orders/${order.id}`)
-        ? Promise.resolve(mockJsonResponse(snapshot, 200))
-        : Promise.reject(new Error("Unexpected payment request")),
-    );
+    const fetchMock = vi.fn((...args: Parameters<typeof fetch>) => {
+      const url = String(args[0]);
+      if (url.endsWith(`/orders/${order.id}`)) return Promise.resolve(mockJsonResponse(snapshot, 200));
+      if (url.endsWith("/payments/config")) return Promise.resolve(mockPaymentConfigResponse());
+      return Promise.reject(new Error("Unexpected payment request"));
+    });
     vi.stubGlobal("fetch", fetchMock);
     renderCheckout();
 
     await screen.findByRole("heading", { name: "Thanh toán thành công" });
-    expect(fetchMock).toHaveBeenCalledTimes(1);
-    expect(String(fetchMock.mock.calls[0][0])).toBe(`http://localhost:3001/orders/${order.id}`);
+    expect(fetchMock).toHaveBeenCalledTimes(3);
+    expect(fetchMock.mock.calls.some(([url]) => String(url) === `http://localhost:3001/orders/${order.id}`)).toBe(true);
     expect(screen.getAllByText("PAID").length).toBeGreaterThan(0);
   });
 });

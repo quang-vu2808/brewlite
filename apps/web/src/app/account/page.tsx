@@ -28,7 +28,7 @@ export default function AccountPage() {
                 </div>
               </dl>
               <p className="account-note">
-                Điểm thành viên hiện mới là thông tin hồ sơ; chương trình tích điểm chưa được triển khai.
+                Điểm được cộng sau khi thanh toán mô phỏng thành công; mỗi đơn chỉ được cộng một lần.
                 Phiên đăng nhập được giữ trong bộ nhớ và sẽ kết thúc khi tải lại trang.
               </p>
               <div className="account-actions">

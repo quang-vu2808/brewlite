@@ -33,7 +33,7 @@ services:
       DB_PASSWORD: ${DB_PASSWORD:?DB_PASSWORD is required}
       DB_NAME: ${DB_NAME:-brewlite}
       JWT_SECRET: ${JWT_SECRET:?JWT_SECRET is required}
-      MOCK_PAYMENT_MODE: ${MOCK_PAYMENT_MODE:-SUCCESS}
+      PAYMENT_DEMO_ENABLED: ${PAYMENT_DEMO_ENABLED:-false}
     ports:
       - "127.0.0.1:${API_PUBLISHED_PORT:-3003}:3001"
     depends_on:

@@ -58,12 +58,14 @@ export class AuthService {
     id: string;
     email: string;
     loyaltyPoints: number;
+    role: 'CUSTOMER' | 'STAFF';
     createdAt: Date;
   }) {
     return {
       id: user.id,
       email: user.email,
       loyaltyPoints: user.loyaltyPoints,
+      role: user.role,
       createdAt: user.createdAt,
     };
   }

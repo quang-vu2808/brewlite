@@ -13,6 +13,7 @@ describe('AuthService', () => {
     email: 'customer@example.com',
     passwordHash: '',
     loyaltyPoints: 0,
+    role: 'CUSTOMER' as const,
     createdAt: new Date('2026-01-01T00:00:00.000Z'),
     orders: [],
   };
@@ -56,6 +57,7 @@ describe('AuthService', () => {
       id: user.id,
       email: user.email,
       loyaltyPoints: 0,
+      role: 'CUSTOMER',
       createdAt: user.createdAt,
     });
 
@@ -92,6 +94,7 @@ describe('AuthService', () => {
         id: user.id,
         email: user.email,
         loyaltyPoints: 0,
+        role: 'CUSTOMER',
         createdAt: user.createdAt,
       },
     });

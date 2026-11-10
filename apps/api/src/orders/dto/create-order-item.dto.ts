@@ -7,6 +7,8 @@ import {
   IsIn,
   IsInt,
   IsOptional,
+  IsString,
+  Matches,
   Max,
   Min,
   ValidateNested,
@@ -53,4 +55,16 @@ export class CreateOrderDto {
   @Type(() => CreateOrderItemDto)
   @ValidateNested({ each: true })
   items!: CreateOrderItemDto[];
+
+  @IsOptional()
+  @IsString()
+  @Matches(/^[A-Z0-9_-]{3,40}$/)
+  promoCode?: string;
+
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(0)
+  @Max(2_147_483_647)
+  redeemPoints?: number;
 }
