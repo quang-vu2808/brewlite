@@ -38,6 +38,7 @@ type CartContextValue = {
   dismissAddedItem: () => void;
   increaseQuantity: (key: string) => void;
   decreaseQuantity: (key: string) => void;
+  removeTopping: (key: string, toppingId: string) => void;
   removeItem: (key: string) => void;
   clearCart: () => void;
 };
@@ -64,7 +65,11 @@ function isCartItem(value: unknown): value is CartItem {
       return typeof option.id === "string" &&
         typeof option.name === "string" &&
         Number.isSafeInteger(option.surcharge) &&
-        Number(option.surcharge) >= 0;
+        Number(option.surcharge) >= 0 &&
+        (option.quantity === undefined ||
+          (Number.isSafeInteger(option.quantity) &&
+            Number(option.quantity) >= 1 &&
+            Number(option.quantity) <= 2_147_483_647));
     }) &&
     Number.isSafeInteger(item.unitPrice) &&
     Number(item.unitPrice) >= 0 &&
@@ -114,8 +119,11 @@ function readStoredItems(): CartItem[] {
 }
 
 function makeItemKey(productId: string, size: ProductSize, toppings: readonly ProductTopping[]): string {
-  const toppingIds = [...new Set(toppings.map((topping) => topping.id))].sort();
-  return JSON.stringify([productId, size, toppingIds]);
+  const toppingSelections = [...new Map(toppings.map((topping) => [
+    topping.id,
+    [topping.id, topping.quantity ?? 1] as const,
+  ])).values()].sort((a, b) => a[0].localeCompare(b[0]));
+  return JSON.stringify([productId, size, toppingSelections]);
 }
 
 export function CartProvider({ children }: { children: ReactNode }) {
@@ -151,9 +159,12 @@ export function CartProvider({ children }: { children: ReactNode }) {
   }, [items, hydrated]);
 
   const addItem = useCallback((input: Omit<CartItem, "key" | "unitPrice" | "quantity">): CartItem => {
-    const key = makeItemKey(input.productId, input.size, input.toppings);
+    const toppings = [...new Map(input.toppings.map((topping) => [
+      topping.id,
+      { ...topping, ...(topping.quantity === undefined ? {} : { quantity: topping.quantity }) },
+    ])).values()];
+    const key = makeItemKey(input.productId, input.size, toppings);
     const currentItem = itemsRef.current.find((item) => item.key === key);
-    const toppings = [...new Map(input.toppings.map((topping) => [topping.id, topping])).values()];
     const addedItem: CartItem = currentItem
       ? { ...currentItem, quantity: Math.min(MAX_QUANTITY, currentItem.quantity + 1) }
       : {
@@ -183,6 +194,19 @@ export function CartProvider({ children }: { children: ReactNode }) {
       : item));
   }, [updateItems]);
 
+  const removeTopping = useCallback((key: string, toppingId: string) => {
+    updateItems((current) => current.map((item) => {
+      if (item.key !== key) return item;
+      const toppings = item.toppings.filter((topping) => topping.id !== toppingId);
+      return {
+        ...item,
+        key: makeItemKey(item.productId, item.size, toppings),
+        toppings,
+        unitPrice: calculateUnitPrice(item.basePrice, item.size, toppings),
+      };
+    }));
+  }, [updateItems]);
+
   const removeItem = useCallback((key: string) => {
     updateItems((current) => current.filter((item) => item.key !== key));
   }, [updateItems]);
@@ -203,9 +227,10 @@ export function CartProvider({ children }: { children: ReactNode }) {
     dismissAddedItem,
     increaseQuantity,
     decreaseQuantity,
+    removeTopping,
     removeItem,
     clearCart,
-  }), [items, hydrated, recentlyAdded, addItem, dismissAddedItem, increaseQuantity, decreaseQuantity, removeItem, clearCart]);
+  }), [items, hydrated, recentlyAdded, addItem, dismissAddedItem, increaseQuantity, decreaseQuantity, removeTopping, removeItem, clearCart]);
 
   return <CartContext.Provider value={value}>{children}</CartContext.Provider>;
 }

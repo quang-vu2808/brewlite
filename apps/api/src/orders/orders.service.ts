@@ -14,7 +14,6 @@ import { UserEntity } from '../users/user.entity';
 import { IngredientsService } from '../ingredients/ingredients.service';
 import { CreateOrderDto, CreateOrderItemDto } from './dto/create-order-item.dto';
 import { assertTransition, type OrderStatus } from './order-state';
-import { InventoryService } from './inventory.service';
 import { OrderEntity } from './entities/order.entity';
 import {
   OrderItemEntity,
@@ -51,12 +50,13 @@ export class OrdersService {
   constructor(
     @InjectDataSource() private readonly dataSource: DataSource,
     private readonly productsService: ProductsService,
-    @Inject(InventoryService)
-    private readonly inventory: Pick<InventoryService, 'reserve' | 'release'>,
     @Inject(IngredientsService)
     private readonly ingredients: Pick<
       IngredientsService,
-      'reserveForOrder' | 'saveOrderConsumption' | 'releaseOrderConsumption'
+      | 'checkOrderAvailability'
+      | 'reserveOrderItems'
+      | 'saveOrderConsumption'
+      | 'releaseOrderConsumption'
     >,
   ) {}
 
@@ -76,19 +76,9 @@ export class OrdersService {
         : null;
       if (dto.redeemPoints && !user) throw new NotFoundException('Không tìm thấy tài khoản');
 
-      const quantities = new Map<number, number>();
-      for (const item of items) {
-        quantities.set(
-          item.productId,
-          (quantities.get(item.productId) ?? 0) + item.quantity,
-        );
-      }
-      for (const [productId, quantity] of quantities) {
-        await this.inventory.reserve(manager, productId, quantity);
-      }
-      const ingredientConsumptions = await this.ingredients.reserveForOrder(
+      const ingredientConsumptions = await this.ingredients.reserveOrderItems(
         manager,
-        quantities,
+        this.inventoryLines(items),
       );
 
       const promotionCode = dto.promoCode?.trim().toUpperCase() ?? null;
@@ -154,6 +144,10 @@ export class OrdersService {
     const items = this.priceOrderItems(dto.items);
     const subtotalAmount = items.reduce((total, item) => total + item.lineTotal, 0);
     this.assertValidSubtotal(subtotalAmount);
+    const inventory = await this.ingredients.checkOrderAvailability(
+      this.dataSource.manager,
+      this.inventoryLines(items),
+    );
 
     const promotionCode = dto.promoCode?.trim().toUpperCase() ?? null;
     const promotion = promotionCode
@@ -197,6 +191,7 @@ export class OrdersService {
       totalAmount,
       loyaltyPointsAvailable: user?.loyaltyPoints ?? null,
       projectedLoyaltyPoints: Math.floor(totalAmount / 1000),
+      inventory,
     };
   }
 
@@ -312,10 +307,6 @@ export class OrdersService {
       where: { orderId: order.id },
     });
     if (!order.inventoryReleasedAt) {
-      const quantities = this.aggregateQuantities(items);
-      for (const [productId, quantity] of quantities) {
-        await this.inventory.release(manager, productId, quantity);
-      }
       await this.ingredients.releaseOrderConsumption(manager, order.id);
       order.inventoryReleasedAt = new Date();
     }
@@ -474,14 +465,22 @@ export class OrdersService {
         throw new NotFoundException(`Không tìm thấy sản phẩm ${item.productId}`);
       }
 
-      const toppings = [...new Set(item.toppings ?? [])].map((id) => {
+      const selectedToppings = [...new Set(item.toppings ?? [])];
+      const portionOverrides = item.toppingQuantities ?? [];
+      if (portionOverrides.some((entry) => !selectedToppings.includes(entry.id))) {
+        throw new BadRequestException('Số phần topping không khớp với lựa chọn');
+      }
+      const toppings = selectedToppings.map((id) => {
         const topping = Object.hasOwn(TOPPING_CATALOG, id) ? TOPPING_CATALOG[id] : undefined;
         if (!topping) throw new BadRequestException(`Topping không hợp lệ: ${id}`);
-        return { ...topping };
+        return {
+          ...topping,
+          quantity: portionOverrides.find((entry) => entry.id === id)?.quantity ?? 1,
+        };
       });
       const unitPrice = product.price +
         SIZE_SURCHARGES[item.size] +
-        toppings.reduce((total, topping) => total + topping.surcharge, 0);
+        toppings.reduce((total, topping) => total + topping.surcharge * (topping.quantity ?? 1), 0);
       const lineTotal = unitPrice * item.quantity;
 
       if (
@@ -506,14 +505,16 @@ export class OrdersService {
     });
   }
 
-  private aggregateQuantities(items: OrderItemEntity[]) {
-    const quantities = new Map<number, number>();
-    for (const item of items) {
-      quantities.set(
-        item.productId,
-        (quantities.get(item.productId) ?? 0) + item.quantity,
-      );
-    }
-    return quantities;
+  private inventoryLines(items: PricedOrderItem[]) {
+    return items.map((item) => ({
+      productId: item.productId,
+      size: item.size,
+      quantity: item.quantity,
+      toppings: item.toppings.map((topping) => ({
+        id: topping.id,
+        quantity: topping.quantity ?? 1,
+      })),
+    }));
   }
+
 }
