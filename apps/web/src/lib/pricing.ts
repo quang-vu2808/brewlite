@@ -15,6 +15,7 @@ export type ProductTopping = {
   id: string;
   name: string;
   surcharge: number;
+  quantity?: number;
 };
 
 export function calculateUnitPrice(
@@ -26,7 +27,9 @@ export function calculateUnitPrice(
   const sizeSurcharge = SIZE_OPTIONS.find((option) => option.name === size)?.surcharge ?? 0;
   const uniqueToppings = new Map(toppings.map((topping) => [topping.id, topping]));
   const toppingSurcharge = [...uniqueToppings.values()].reduce(
-    (total, topping) => total + (Number.isSafeInteger(topping.surcharge) && topping.surcharge > 0 ? topping.surcharge : 0),
+    (total, topping) => total +
+      (Number.isSafeInteger(topping.surcharge) && topping.surcharge > 0 ? topping.surcharge : 0) *
+      (Number.isSafeInteger(topping.quantity) && (topping.quantity ?? 0) > 0 ? topping.quantity! : 1),
     0,
   );
   const total = safeBasePrice + sizeSurcharge + toppingSurcharge;

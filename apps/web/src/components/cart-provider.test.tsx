@@ -61,6 +61,9 @@ function CartProbe() {
       <button onClick={() => cart.removeItem(cart.items[0]?.key ?? "")}>
         Remove first
       </button>
+      <button onClick={() => cart.removeTopping(cart.items[0]?.key ?? "", "pearls")}>
+        Remove pearls
+      </button>
       <button onClick={cart.clearCart}>Clear cart</button>
     </div>
   );
@@ -116,6 +119,28 @@ describe("CartProvider", () => {
     expect(screen.getByTestId("total-price").textContent).toBe("110000");
   });
 
+  it("preserves topping quantities above the drink quantity limit when restoring the cart", async () => {
+    window.localStorage.setItem(STORAGE_KEY, JSON.stringify([{
+      key: '["1","S",[["pearls",100]]]',
+      productId: "1",
+      name: "Cà phê sữa",
+      image: null,
+      basePrice: 25000,
+      size: "S",
+      sizeSurcharge: 0,
+      toppings: [{ id: "pearls", name: "Trân châu", surcharge: 5000, quantity: 100 }],
+      unitPrice: 525000,
+      quantity: 1,
+    }]));
+
+    renderCart();
+    await screen.findByText("true");
+
+    expect(readItems()[0].toppings).toEqual([
+      expect.objectContaining({ id: "pearls", quantity: 100 }),
+    ]);
+  });
+
   it("clamps quantity at one, recalculates totals, and removes only the chosen item", async () => {
     renderCart();
     await screen.findByText("true");
@@ -162,5 +187,16 @@ describe("CartProvider", () => {
     fireEvent.click(screen.getByRole("button", { name: "Clear cart" }));
     expect(screen.getByTestId("total-items").textContent).toBe("0");
     expect(screen.getByTestId("total-price").textContent).toBe("0");
+  });
+
+  it("removes a topping without removing the drink and recalculates its price", async () => {
+    renderCart();
+    await screen.findByText("true");
+    fireEvent.click(screen.getByRole("button", { name: "Add pearls" }));
+    fireEvent.click(screen.getByRole("button", { name: "Remove pearls" }));
+    expect(readItems()).toEqual([
+      expect.objectContaining({ size: "S", unitPrice: 25000, toppings: [] }),
+    ]);
+    expect(screen.getByTestId("total-price").textContent).toBe("25000");
   });
 });

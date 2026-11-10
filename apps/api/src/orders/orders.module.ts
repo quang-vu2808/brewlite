@@ -9,7 +9,6 @@ import { ProductInventoryEntity } from './entities/product-inventory.entity';
 import { PromotionEntity } from '../promotions/promotion.entity';
 import { OrdersController } from './orders.controller';
 import { OrdersService } from './orders.service';
-import { InventoryService } from './inventory.service';
 import { StaffGuard } from './guards/staff.guard';
 import { InventoryController } from './inventory.controller';
 import { IngredientsModule } from '../ingredients/ingredients.module';
@@ -28,6 +27,6 @@ import { IngredientsModule } from '../ingredients/ingredients.module';
     ]),
   ],
   controllers: [OrdersController, InventoryController],
-  providers: [OrdersService, InventoryService, StaffGuard],
+  providers: [OrdersService, StaffGuard],
 })
 export class OrdersModule {}
