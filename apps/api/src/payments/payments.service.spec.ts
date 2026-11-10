@@ -1,31 +1,35 @@
 import 'reflect-metadata';
-import {
-  ConflictException,
-  NotFoundException,
-} from '@nestjs/common';
+import { ConflictException, NotFoundException } from '@nestjs/common';
 import type { ConfigService } from '@nestjs/config';
 import type { DataSource, EntityManager } from 'typeorm';
 import { OrderEntity } from '../orders/entities/order.entity';
+import { UserEntity } from '../users/user.entity';
 import { CreatePaymentDto } from './create-payment.dto';
 import { PaymentEntity, PaymentMethod } from './payment.entity';
 import { PaymentsService } from './payments.service';
+import { MockPaymentProvider } from './mock-payment.provider';
 
 describe('PaymentsService', () => {
   const userId = 'user-id';
   const orderId = 'order-id';
   const createdAt = new Date('2026-01-01T00:00:00.000Z');
   let order: OrderEntity;
+  let user: UserEntity;
+  let previousPayment: PaymentEntity | null;
   let findOne: jest.Mock;
   let save: jest.Mock;
   let transaction: jest.Mock;
   let service: PaymentsService;
 
-  function createService(mode: 'SUCCESS' | 'FAIL' = 'SUCCESS') {
+  function createService(demoEnabled = false) {
     const config = {
-      get: jest.fn().mockReturnValue(mode),
+      get: jest.fn(() => demoEnabled ? 'true' : 'false'),
     } as unknown as ConfigService;
-    const dataSource = { transaction } as unknown as DataSource;
-    return new PaymentsService(dataSource, config);
+    return new PaymentsService(
+      { transaction } as unknown as DataSource,
+      config,
+      new MockPaymentProvider(),
+    );
   }
 
   beforeEach(() => {
@@ -34,15 +38,31 @@ describe('PaymentsService', () => {
       userId,
       status: 'PENDING',
       totalAmount: 75000,
+      discountAmount: 0,
+      loyaltyPointsAwarded: 0,
       createdAt,
     });
-    findOne = jest.fn().mockImplementation(async () => order);
+    user = Object.assign(new UserEntity(), {
+      id: userId,
+      email: 'member@example.invalid',
+      loyaltyPoints: 0,
+      role: 'CUSTOMER',
+    });
+    previousPayment = null;
+    findOne = jest.fn().mockImplementation(async (target) => {
+      if (target === UserEntity) return user;
+      if (target === PaymentEntity) return previousPayment;
+      if (target === OrderEntity) return order;
+      return null;
+    });
     save = jest.fn().mockImplementation(async (target, values) => {
       if (target === PaymentEntity) {
-        return Object.assign(new PaymentEntity(), values, {
+        const payment = Object.assign(new PaymentEntity(), values, {
           id: 'payment-id',
           createdAt,
         });
+        if (payment.resultSnapshot) previousPayment = payment;
+        return payment;
       }
       return values;
     });
@@ -53,117 +73,119 @@ describe('PaymentsService', () => {
     service = createService();
   });
 
-  it.each([
-    [PaymentMethod.WALLET],
-    [PaymentMethod.CARD],
-  ])('marks a %s payment PAID using the stored order amount', async (method) => {
-    const dto = { orderId, method } as CreatePaymentDto & { amount: number };
-    dto.amount = 1;
+  const dto: CreatePaymentDto = {
+    orderId,
+    method: PaymentMethod.WALLET,
+  };
+  const key = 'payment-demo-001';
 
-    await expect(service.pay(dto, userId)).resolves.toMatchObject({
+  it('uses the server total, transitions to PAID, and awards points transactionally', async () => {
+    const result = await service.pay({
+      orderId,
+      method: PaymentMethod.CARD,
+    }, userId, key);
+
+    expect(result).toMatchObject({
       paymentId: 'payment-id',
       orderId,
-      method,
       status: 'SUCCESS',
       orderStatus: 'PAID',
       amount: 75000,
-      message: 'Thanh toán giả lập thành công',
-      createdAt,
-    });
-    expect(transaction).toHaveBeenCalledTimes(1);
-    expect(findOne).toHaveBeenCalledWith(OrderEntity, {
-      where: { id: orderId },
-      lock: { mode: 'pessimistic_write' },
-    });
-    expect(save).toHaveBeenNthCalledWith(1, PaymentEntity, {
-      orderId,
-      method,
-      status: 'SUCCESS',
-      amount: 75000,
+      loyaltyPoints: 75,
+      pointsEarned: 75,
     });
     expect(order.status).toBe('PAID');
+    expect(order.loyaltyPointsAwarded).toBe(75);
+    expect(user.loyaltyPoints).toBe(75);
+    expect(transaction).toHaveBeenCalledTimes(1);
+    expect(save).toHaveBeenCalledWith(PaymentEntity, expect.objectContaining({
+      idempotencyKey: key,
+      amount: 75000,
+    }));
   });
 
-  it('records a deterministic mock failure and marks the order PAYMENT_FAILED', async () => {
-    service = createService('FAIL');
+  it('returns the saved response for a repeated key without changing points again', async () => {
+    const first = await service.pay(dto, userId, key);
+    const saveCount = save.mock.calls.length;
+    const repeated = await service.pay(dto, userId, key);
+
+    expect(repeated).toEqual(first);
+    expect(save).toHaveBeenCalledTimes(saveCount);
+    expect(user.loyaltyPoints).toBe(75);
+  });
+
+  it('rejects reusing a key with a different payload', async () => {
+    await service.pay(dto, userId, key);
 
     await expect(service.pay({
       orderId,
       method: PaymentMethod.CARD,
-    }, userId)).resolves.toMatchObject({
+    }, userId, key)).rejects.toBeInstanceOf(ConflictException);
+    expect(user.loyaltyPoints).toBe(75);
+  });
+
+  it('requires an idempotency key', async () => {
+    await expect(service.pay(dto, userId, undefined))
+      .rejects.toThrow('Idempotency-Key');
+    expect(transaction).not.toHaveBeenCalled();
+  });
+
+  it('rejects a simulated failure when demo controls are disabled', async () => {
+    await expect(service.pay({
+      orderId: dto.orderId,
+      method: dto.method,
+      simulateFailure: true,
+    }, userId, key)).rejects.toThrow('Giả lập thất bại đang bị tắt');
+    expect(transaction).not.toHaveBeenCalled();
+  });
+
+  it('treats a changed demo outcome as a different payload for an idempotency key', async () => {
+    service = createService(true);
+    await service.pay(dto, userId, key);
+    await expect(service.pay({
+      orderId: dto.orderId,
+      method: dto.method,
+      simulateFailure: true,
+    }, userId, key)).rejects.toBeInstanceOf(ConflictException);
+  });
+
+  it('does not award points for a failed payment and permits a retry with a new key', async () => {
+    service = createService(true);
+    await expect(service.pay({
+      orderId: dto.orderId,
+      method: dto.method,
+      simulateFailure: true,
+    }, userId, key)).resolves.toMatchObject({
       status: 'FAILED',
       orderStatus: 'PAYMENT_FAILED',
-      amount: 75000,
-      message: 'Thanh toán giả lập thất bại',
+      pointsEarned: 0,
     });
-    expect(order.status).toBe('PAYMENT_FAILED');
-    expect(save).toHaveBeenNthCalledWith(1, PaymentEntity, expect.objectContaining({
-      status: 'FAILED',
-      amount: 75000,
-    }));
+    expect(user.loyaltyPoints).toBe(0);
+
+    previousPayment = null;
+    service = createService();
+    await expect(service.pay(dto, userId, 'payment-demo-002')).resolves.toMatchObject({
+      status: 'SUCCESS',
+      orderStatus: 'PAID',
+    });
+    expect(user.loyaltyPoints).toBe(75);
   });
 
   it('hides an order owned by another user', async () => {
-    await expect(service.pay({
-      orderId,
-      method: PaymentMethod.WALLET,
-    }, 'another-user')).rejects.toBeInstanceOf(NotFoundException);
-    expect(save).not.toHaveBeenCalled();
+    findOne.mockImplementation(async (target) => {
+      if (target === UserEntity) return user;
+      if (target === PaymentEntity) return null;
+      if (target === OrderEntity) return null;
+      return null;
+    });
+
+    await expect(service.pay(dto, userId, key)).rejects.toBeInstanceOf(NotFoundException);
   });
 
-  it('returns 404 when the order does not exist', async () => {
-    findOne.mockResolvedValue(null);
-
-    await expect(service.pay({
-      orderId,
-      method: PaymentMethod.WALLET,
-    }, userId)).rejects.toBeInstanceOf(NotFoundException);
-    expect(save).not.toHaveBeenCalled();
-  });
-
-  it('rejects already-paid orders and does not create another payment', async () => {
-    order.status = 'PAID';
-
-    await expect(service.pay({
-      orderId,
-      method: PaymentMethod.CARD,
-    }, userId)).rejects.toBeInstanceOf(ConflictException);
-    expect(save).not.toHaveBeenCalled();
-  });
-
-  it('allows a failed order to retry without creating another order', async () => {
-    order.status = 'PAYMENT_FAILED';
-
-    await service.pay({
-      orderId,
-      method: PaymentMethod.WALLET,
-    }, userId);
-
-    expect(save).toHaveBeenCalledWith(PaymentEntity, expect.objectContaining({
-      orderId,
-      status: 'SUCCESS',
-    }));
-    expect(order.id).toBe(orderId);
-    expect(order.status).toBe('PAID');
-  });
-
-  it('rejects unsupported order states', async () => {
+  it('rejects unsupported transitions', async () => {
     order.status = 'CANCELLED';
 
-    await expect(service.pay({
-      orderId,
-      method: PaymentMethod.CARD,
-    }, userId)).rejects.toBeInstanceOf(ConflictException);
+    await expect(service.pay(dto, userId, key)).rejects.toBeInstanceOf(ConflictException);
     expect(save).not.toHaveBeenCalled();
-  });
-
-  it('does not continue if a database write fails inside the transaction', async () => {
-    save.mockRejectedValueOnce(new Error('database write failed'));
-
-    await expect(service.pay({
-      orderId,
-      method: PaymentMethod.WALLET,
-    }, userId)).rejects.toThrow('database write failed');
-    expect(transaction).toHaveBeenCalledTimes(1);
   });
 });

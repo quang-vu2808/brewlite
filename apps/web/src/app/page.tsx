@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
 import { SiteHeader } from "../components/site-header";
+import { fetchInventory, type InventoryRecord } from "../lib/inventory";
 
 type Product = {
   id: string | number;
@@ -32,6 +33,8 @@ export default function Home() {
   const [state, setState] = useState<LoadState>("loading");
   const [message, setMessage] = useState("");
   const [retry, setRetry] = useState(0);
+  const [inventory, setInventory] = useState<Map<number, InventoryRecord>>(new Map());
+  const [inventoryMessage, setInventoryMessage] = useState("");
   const menuRef = useRef<HTMLElement>(null);
 
   useEffect(() => {
@@ -53,6 +56,21 @@ export default function Home() {
       }
     }
     void load();
+    return () => abort.abort();
+  }, [retry]);
+
+  useEffect(() => {
+    const abort = new AbortController();
+    void fetchInventory(abort.signal).then((records) => {
+      if (abort.signal.aborted) return;
+      setInventory(new Map(records.map((record) => [record.productId, record])));
+      setInventoryMessage("");
+    }).catch((error: unknown) => {
+      if (!abort.signal.aborted) {
+        setInventory(new Map());
+        setInventoryMessage(error instanceof Error ? error.message : "Không thể tải tồn kho");
+      }
+    });
     return () => abort.abort();
   }, [retry]);
 
@@ -86,10 +104,11 @@ export default function Home() {
           {state === "success" && products.length > 0 && <div className="product-grid">{products.map((product) => {
             const image = imageSrc(product);
             const numericPrice = Number(product.price);
+            const stock = inventory.get(Number(product.id));
             return <Link className="product-card" href={`/products/${encodeURIComponent(String(product.id))}`} aria-label={`Xem chi tiết ${product.name}`} key={String(product.id)}><div className="product-image">{image ? (
                 // eslint-disable-next-line @next/next/no-img-element
                 <img src={image} alt={product.name} loading="lazy" onError={(event) => { event.currentTarget.hidden = true; event.currentTarget.parentElement?.classList.add("image-fallback"); }} />
-              ) : <span className="coffee-symbol" aria-hidden="true">☕</span>}</div><div className="product-details"><span className="product-overline">BREWLITE SELECTION</span><h3>{product.name}</h3><div className="product-bottom"><strong>{Number.isFinite(numericPrice) ? formatter.format(numericPrice) : "Liên hệ"}</strong><span className="product-label">Xem chi tiết ↗</span></div></div></Link>;
+              ) : <span className="coffee-symbol" aria-hidden="true">☕</span>}</div><div className="product-details"><span className="product-overline">BREWLITE SELECTION</span><h3>{product.name}</h3><div className="product-bottom"><strong>{Number.isFinite(numericPrice) ? formatter.format(numericPrice) : "Liên hệ"}</strong><span className="product-label">Xem chi tiết ↗</span></div><small className="stock-label">{inventoryMessage || (stock ? `Còn ${stock.stock} sản phẩm` : "Đang cập nhật tồn kho")}</small></div></Link>;
           })}</div>}
         </section>
       </main>

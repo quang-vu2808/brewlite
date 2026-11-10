@@ -6,6 +6,7 @@ import { useEffect, useState } from "react";
 import { SiteHeader } from "../../../components/site-header";
 import { useCart } from "../../../components/cart-provider";
 import { calculateUnitPrice, SIZE_OPTIONS, TOPPING_OPTIONS, type ProductSize } from "../../../lib/pricing";
+import { fetchInventory } from "../../../lib/inventory";
 
 type Product = {
   id: number | string;
@@ -57,6 +58,8 @@ export default function ProductDetailPage() {
   const [retry, setRetry] = useState(0);
   const [size, setSize] = useState<ProductSize>("M");
   const [selectedToppings, setSelectedToppings] = useState<Set<string>>(new Set());
+  const [stock, setStock] = useState<number | null>(null);
+  const [stockError, setStockError] = useState("");
 
   useEffect(() => {
     const abort = new AbortController();
@@ -65,6 +68,8 @@ export default function ProductDetailPage() {
       setProduct(null);
       setState("loading");
       setMessage("");
+      setStock(null);
+      setStockError("");
       setSize("M");
       setSelectedToppings(new Set());
 
@@ -91,6 +96,15 @@ export default function ProductDetailPage() {
         if (!abort.signal.aborted) {
           setProduct({ ...payload, price: Number(payload.price) });
           setState("success");
+        }
+        try {
+          const records = await fetchInventory(abort.signal);
+          const productStock = records.find((record) => record.productId === Number(payload.id));
+          if (!abort.signal.aborted) setStock(productStock?.stock ?? 0);
+        } catch (error) {
+          if (!abort.signal.aborted) {
+            setStockError(error instanceof Error ? error.message : "Không thể tải tồn kho");
+          }
         }
       } catch (error) {
         if (!abort.signal.aborted) {
@@ -160,6 +174,9 @@ export default function ProductDetailPage() {
               <h1 id="product-name">{product.name}</h1>
               {product.description && <p className="detail-description">{product.description}</p>}
               <p className="detail-base-price">Giá cơ bản <strong>{formatter.format(basePrice)}</strong></p>
+              <p className="detail-stock" role={stockError ? "alert" : undefined}>
+                {stockError || (stock === null ? "Đang tải tồn kho..." : stock > 0 ? `Còn ${stock} sản phẩm` : "Tạm hết hàng")}
+              </p>
 
               <fieldset className="option-group">
                 <legend>Chọn size</legend>
@@ -220,7 +237,7 @@ export default function ProductDetailPage() {
               <button
                 className="detail-action add-to-cart"
                 type="button"
-                disabled={!cartHydrated}
+                disabled={!cartHydrated || stock === null || stock <= 0}
                 onClick={() => {
                   if (!product) return;
                   addItem({

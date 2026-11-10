@@ -23,6 +23,9 @@ export class UserEntity {
   @Column({ name: 'loyalty_points', type: 'integer', default: 0 })
   loyaltyPoints!: number;
 
+  @Column({ type: 'varchar', length: 20, default: 'CUSTOMER' })
+  role!: 'CUSTOMER' | 'STAFF';
+
   @CreateDateColumn({ name: 'created_at', type: 'timestamptz' })
   createdAt!: Date;
 

@@ -32,7 +32,14 @@ export type CheckoutOrderItem = {
 export type CheckoutOrder = {
   id: string;
   orderCode: string;
-  status: "PENDING" | "PAID" | "PAYMENT_FAILED";
+  status: "PENDING" | "PAYMENT_FAILED" | "PAID" | "PREPARING" | "READY" | "COMPLETED" | "CANCELLED";
+  subtotalAmount?: number;
+  discountAmount?: number;
+  loyaltyDiscountAmount?: number;
+  redeemedPoints?: number;
+  loyaltyPointsAwarded?: number;
+  loyaltyPoints?: number;
+  promotionCode?: string | null;
   totalAmount: number;
   createdAt: string;
   items: CheckoutOrderItem[];
@@ -45,6 +52,10 @@ export type CheckoutPayment = {
   status: "SUCCESS" | "FAILED";
   orderStatus: "PAID" | "PAYMENT_FAILED";
   amount: number;
+  loyaltyPoints?: number;
+  pointsEarned?: number;
+  provider?: string;
+  qrPayload?: string;
   message: string;
   createdAt: string;
 };
@@ -74,8 +85,15 @@ function isCheckoutOrder(value: unknown): value is CheckoutOrder {
   const order = value as Partial<CheckoutOrder>;
   return typeof order.id === "string" &&
     typeof order.orderCode === "string" &&
-    (order.status === "PENDING" || order.status === "PAID" || order.status === "PAYMENT_FAILED") &&
+    ["PENDING", "PAYMENT_FAILED", "PAID", "PREPARING", "READY", "COMPLETED", "CANCELLED"].includes(order.status ?? "") &&
     isNonNegativeInteger(order.totalAmount) &&
+    (order.subtotalAmount === undefined || isNonNegativeInteger(order.subtotalAmount)) &&
+    (order.discountAmount === undefined || isNonNegativeInteger(order.discountAmount)) &&
+    (order.loyaltyDiscountAmount === undefined || isNonNegativeInteger(order.loyaltyDiscountAmount)) &&
+    (order.redeemedPoints === undefined || isNonNegativeInteger(order.redeemedPoints)) &&
+    (order.loyaltyPointsAwarded === undefined || isNonNegativeInteger(order.loyaltyPointsAwarded)) &&
+    (order.loyaltyPoints === undefined || isNonNegativeInteger(order.loyaltyPoints)) &&
+    (order.promotionCode === undefined || order.promotionCode === null || typeof order.promotionCode === "string") &&
     typeof order.createdAt === "string" &&
     Array.isArray(order.items) &&
     order.items.every((item) => {
@@ -105,6 +123,10 @@ function isCheckoutPayment(value: unknown): value is CheckoutPayment {
     (payment.status === "SUCCESS" || payment.status === "FAILED") &&
     (payment.orderStatus === "PAID" || payment.orderStatus === "PAYMENT_FAILED") &&
     isNonNegativeInteger(payment.amount) &&
+    (payment.loyaltyPoints === undefined || isNonNegativeInteger(payment.loyaltyPoints)) &&
+    (payment.pointsEarned === undefined || isNonNegativeInteger(payment.pointsEarned)) &&
+    (payment.provider === undefined || typeof payment.provider === "string") &&
+    (payment.qrPayload === undefined || typeof payment.qrPayload === "string") &&
     typeof payment.message === "string" &&
     typeof payment.createdAt === "string";
 }

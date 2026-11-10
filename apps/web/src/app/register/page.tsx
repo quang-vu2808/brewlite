@@ -21,14 +21,14 @@ function readErrorMessage(value: unknown): string {
 function safeReturnTo(value: string | null): string {
   return value?.startsWith("/") && !value.startsWith("//") && !value.includes("\\")
     ? value
-    : "/cart";
+    : "/";
 }
 
 export default function RegisterPage() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [confirmation, setConfirmation] = useState("");
-  const [returnTo, setReturnTo] = useState("/cart");
+  const [returnTo, setReturnTo] = useState("/");
   const [error, setError] = useState("");
   const [registered, setRegistered] = useState(false);
   const [submitting, setSubmitting] = useState(false);

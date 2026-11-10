@@ -8,6 +8,7 @@ import {
   UpdateDateColumn,
 } from 'typeorm';
 import { OrderEntity } from '../orders/entities/order.entity';
+import { UserEntity } from '../users/user.entity';
 
 export enum PaymentMethod {
   WALLET = 'WALLET',
@@ -27,6 +28,13 @@ export class PaymentEntity {
   @Column({ name: 'order_id', type: 'uuid' })
   orderId!: string;
 
+  @Column({ name: 'user_id', type: 'uuid', nullable: true })
+  userId!: string | null;
+
+  @ManyToOne(() => UserEntity, { nullable: true, onDelete: 'SET NULL' })
+  @JoinColumn({ name: 'user_id' })
+  user!: UserEntity | null;
+
   @ManyToOne(() => OrderEntity, (order) => order.payments, {
     onDelete: 'CASCADE',
   })
@@ -41,6 +49,15 @@ export class PaymentEntity {
 
   @Column({ type: 'integer' })
   amount!: number;
+
+  @Column({ name: 'idempotency_key', type: 'varchar', length: 128, nullable: true })
+  idempotencyKey!: string | null;
+
+  @Column({ name: 'request_hash', type: 'varchar', length: 64, nullable: true })
+  requestHash!: string | null;
+
+  @Column({ name: 'result_snapshot', type: 'jsonb', nullable: true })
+  resultSnapshot!: Record<string, unknown> | null;
 
   @CreateDateColumn({ name: 'created_at', type: 'timestamptz' })
   createdAt!: Date;

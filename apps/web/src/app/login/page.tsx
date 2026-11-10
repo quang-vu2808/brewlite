@@ -18,7 +18,8 @@ function isLoginResponse(value: unknown): value is {
   const user = response.user as Record<string, unknown>;
   return typeof user.id === "string" &&
     typeof user.email === "string" &&
-    Number.isSafeInteger(user.loyaltyPoints);
+    Number.isSafeInteger(user.loyaltyPoints) &&
+    (user.role === "CUSTOMER" || user.role === "STAFF");
 }
 
 function readErrorMessage(value: unknown): string {
@@ -33,10 +34,14 @@ function readErrorMessage(value: unknown): string {
   return "Không thể đăng nhập. Vui lòng thử lại.";
 }
 
-function safeReturnTo(value: string | null): string {
-  return value?.startsWith("/") && !value.startsWith("//") && !value.includes("\\")
-    ? value
-    : "/cart";
+function safeReturnTo(value: string | null, role: AuthUser["role"]): string {
+  if (!value?.startsWith("/") || value.startsWith("//") || value.includes("\\")) {
+    return role === "STAFF" ? "/staff" : "/";
+  }
+  const path = new URL(value, "http://brewlite.local").pathname;
+  const staffPath = path === "/staff" || path.startsWith("/staff/");
+  if (role === "STAFF") return staffPath ? value : "/staff";
+  return staffPath ? "/" : value;
 }
 
 export default function LoginPage() {
@@ -44,7 +49,7 @@ export default function LoginPage() {
   const { signIn } = useAuth();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
-  const [returnTo, setReturnTo] = useState("/cart");
+  const [returnTo, setReturnTo] = useState("/");
   const [registered, setRegistered] = useState(false);
   const [error, setError] = useState("");
   const [submitting, setSubmitting] = useState(false);
@@ -52,7 +57,7 @@ export default function LoginPage() {
   useEffect(() => {
     const timer = window.setTimeout(() => {
       const params = new URLSearchParams(window.location.search);
-      setReturnTo(safeReturnTo(params.get("returnTo")));
+      setReturnTo(params.get("returnTo") ?? "/");
       setRegistered(params.get("registered") === "1");
     }, 0);
     return () => window.clearTimeout(timer);
@@ -75,7 +80,8 @@ export default function LoginPage() {
       if (!isLoginResponse(payload)) throw new Error("Phản hồi đăng nhập không hợp lệ");
 
       signIn(payload.accessToken, payload.user);
-      router.replace(returnTo);
+      const requestedPath = new URLSearchParams(window.location.search).get("returnTo") ?? returnTo;
+      router.replace(safeReturnTo(requestedPath, payload.user.role));
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : "Không thể đăng nhập. Vui lòng thử lại.");
     } finally {
@@ -119,6 +125,7 @@ export default function LoginPage() {
             </button>
           </form>
           <p className="auth-switch">Chưa có tài khoản? <Link href={registerHref}>Đăng ký</Link></p>
+          <p className="auth-switch">Là nhân viên? <Link href="/staff/login">Đăng nhập Staff</Link></p>
         </section>
       </main>
       <footer className="footer">
