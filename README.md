@@ -91,9 +91,21 @@ Size/topping và catalog hiện dùng dữ liệu, quy tắc giá mẫu; cần �
 ### Nâng cấp sau Task 10
 
 - Staff Orders có thể lọc riêng đơn đã hoàn thành và đã hủy; đơn vẫn được lưu trong PostgreSQL.
-- Nhân viên được hủy đơn ở trạng thái mà state machine cho phép. Thao tác được bảo vệ bởi JWT/`StaffGuard`; tồn sản phẩm, nguyên liệu, điểm đổi, điểm thưởng và lượt dùng khuyến mãi được xử lý trong transaction, tối đa một lần.
+- Nhân viên được hủy đơn ở trạng thái mà state machine cho phép. Thao tác được bảo vệ bởi JWT/`StaffGuard`; nguyên liệu, điểm đổi, điểm thưởng và lượt dùng khuyến mãi được xử lý trong transaction, tối đa một lần.
 - Trang `/staff/ingredients` quản lý tên, mã, đơn vị, tồn, ngưỡng cảnh báo, nhập/xuất kho có lý do và công thức theo từng sản phẩm. Điều chỉnh kho được ghi vào bảng audit.
-- Khi tạo đơn, Backend trừ cả tồn sản phẩm hiện có và định lượng nguyên liệu trong recipe ở cùng transaction. Cập nhật kho nguyên liệu dùng version/optimistic concurrency; thiếu tồn làm đơn bị rollback.
+- Khu vực kho chia thành bốn tab: nguyên liệu, vật tư đóng gói, topping và công thức. Mỗi biến động kho đều cập nhật bản ghi ingredient dùng chung và cùng lịch sử audit; công thức không tạo tồn kho riêng.
+- Vật tư có category `CUP` hoặc `LY` và size tương thích được tự động tiêu hao một cái cho mỗi ly tương ứng trên tất cả đồ uống. Các vật tư khác được tham chiếu trong công thức theo sản phẩm-size.
+- Tồn sản phẩm được tính từ tồn nguyên liệu và định lượng trong công thức, lấy giới hạn thấp nhất trong các nguyên liệu. Khi tạo đơn, Backend trừ nguyên liệu trong cùng transaction; thiếu tồn làm đơn bị rollback. Nguyên liệu dùng version/optimistic concurrency.
+- Khả dụng được tính độc lập theo S/M/L; size chưa có công thức riêng được báo chưa cấu hình và không dùng định lượng công thức chung. Công thức size mới hoặc được chỉnh sửa ở trạng thái `PENDING`, không được tính tồn hay dùng để tiêu hao cho tới khi quản lý xác nhận. Nhân viên có thể chép công thức chung hoặc size khác vào bản nháp; bản gốc được giữ nguyên. Bao bì dùng chung tồn kho và chỉ tiêu hao khi có quy tắc đóng gói được cấu hình, ngoại trừ ly tự động khớp size.
+- Danh mục vật tư gồm Ly size S/M/L, nắp, ống hút và bịch; migration tạo mặt hàng còn thiếu với tồn ban đầu bằng 0, không tạo biến động kho. Nhân viên cần kiểm kê rồi nhập số lượng thực tế. Không mặc định tiêu hao nắp, ống hút hoặc bịch.
+- Topping liên kết một bản ghi nguyên liệu dùng chung; định lượng một phần và trạng thái bật/tắt được cấu hình một lần tại tab Kho topping. Mọi topping đang bật áp dụng tự động cho tất cả đồ uống và size, kể cả sản phẩm tạo sau này; số phần khả dụng do tồn kho thực tế quyết định, không có giới hạn thủ công theo sản phẩm-size. Topping tùy chọn không làm món chính hết hàng.
+- Migration `1710000007000-RecipesPackagingAndToppings` bổ sung công thức theo size, phân loại vật tư, quy tắc đóng gói và cấu hình topping; không seed tồn kho, định lượng size, packaging hay định lượng topping. Nhân viên cần cấu hình các dữ liệu này tại `/staff/ingredients` trước khi sử dụng.
+- Migration `1710000008000-EnsureProductToppingRecipes` là migration bổ sung an toàn cho database đã ghi nhận migration 7000 nhưng thiếu bảng quy tắc topping; chỉ tạo bảng còn thiếu và không xóa dữ liệu.
+- Migration `1710000009000-SharedToppingPortionQuantity` thêm định lượng một phần trên danh mục topping, không tạo kho tồn mới. Không suy ra định lượng dùng chung từ công thức theo sản phẩm.
+- Migration `1710000010000-LinkExistingToppingsToIngredients` tạo nguyên liệu `CREAM_CHEESE` (g), `ESPRESSO` (ml), `PEARLS` (g) với tồn 0 nếu mã nguyên liệu chưa tồn tại; nếu đã có thì giữ nguyên tồn và liên kết topping hiện có nếu chưa được liên kết. Migration giữ giá topping, không bật bán và không đặt định lượng. Hệ thống hiện không có công thức espresso từ hạt cà phê; Espresso được quản lý như nguyên liệu ml riêng để tránh tự suy diễn tỷ lệ pha hoặc trừ hạt cà phê hai lần.
+- Migration `1710000011000-UseSharedToppingPortionInConstraint` cập nhật ràng buộc DB cũ để kiểm tra `portion_quantity_required` dùng chung khi bật bán topping. Topping cũ chưa có ingredient hoặc định lượng được giữ tắt cho đến khi nhân viên cấu hình.
+- Migration `1710000012000-SeedPackagingCatalog` bổ sung idempotent danh mục ly size S/M/L, nắp, ống hút và bịch với tồn 0; tái sử dụng bản ghi hiện có tương thích và không xóa dữ liệu khi rollback.
+- Migration `1710000013000-RequireConfirmedSizeRecipes` thêm trạng thái phê duyệt; công thức size hiện hữu mặc định chờ xác nhận, không thay đổi định lượng hoặc tồn. Đây là migration forward-only để tránh rollback làm công thức chưa duyệt được kích hoạt lại. API có `PATCH /ingredients/recipes/:productId/:size/confirm` để xác nhận một size sau khi kiểm tra định lượng và ly tương thích.
 - `/staff/login` là cổng đăng nhập riêng. Trang dùng Auth API hiện hữu, chỉ role `STAFF` mới vào Dashboard; CUSTOMER bị từ chối. Đăng nhập CUSTOMER tại `/login` mặc định về Menu (`/`), nhưng vẫn giữ `returnTo` nội bộ hợp lệ như `/checkout`.
 - Migration `1710000005000-CreateIngredientInventory` tạo schema nguyên liệu/công thức/audit và seed định lượng/tồn mẫu cho ba sản phẩm catalog; không thay đổi bảng hay volume dữ liệu cũ.
 
@@ -103,8 +115,14 @@ Size/topping và catalog hiện dùng dữ liệu, quy tắc giá mẫu; cần �
 |---|---|---|
 | `apps/api/src/app.module.ts` | Chỉnh sửa | Đăng ký entity, migration và module nguyên liệu với TypeORM/NestJS. |
 | `apps/api/src/database/migrations/1710000005000-CreateIngredientInventory.ts` | Tạo mới | Tạo bảng nguyên liệu, recipe, tiêu hao theo đơn và audit điều chỉnh; thêm dữ liệu mẫu ban đầu. |
+| `apps/api/src/database/migrations/1710000007000-RecipesPackagingAndToppings.ts` | Tạo mới | Mở rộng kho dùng chung, công thức size, vật tư và danh mục topping, không seed định lượng/tồn mới. |
+| `apps/api/src/database/migrations/1710000008000-EnsureProductToppingRecipes.ts` | Tạo mới | Khôi phục an toàn bảng công thức topping nếu migration trước đã được ghi nhận nhưng thiếu bảng. |
+| `apps/api/src/database/migrations/1710000009000-SharedToppingPortionQuantity.ts` | Tạo mới | Lưu định lượng mỗi phần topping trong danh mục topping. |
+| `apps/api/src/database/migrations/1710000010000-LinkExistingToppingsToIngredients.ts` | Tạo mới | Tái sử dụng hoặc thêm kho nguyên liệu topping với tồn 0, rồi liên kết catalog hiện có mà không đổi giá/định lượng. |
+| `apps/api/src/database/migrations/1710000011000-UseSharedToppingPortionInConstraint.ts` | Tạo mới | Sửa điều kiện bật bán topping để phù hợp với định lượng chung hiện hành. |
 | `apps/api/src/ingredients/ingredients.module.ts` | Tạo mới | Khai báo module quản lý nguyên liệu và các entity liên quan. |
 | `apps/api/src/ingredients/ingredients.controller.ts` | Tạo mới | Cung cấp API kho, cập nhật thông tin, audit và công thức; bảo vệ bằng JWT/StaffGuard. |
+| `apps/api/src/ingredients/toppings.controller.ts` | Tạo mới | Tạo/cập nhật danh mục topping và cung cấp topping khả dụng cho khách; staff routes được bảo vệ. |
 | `apps/api/src/ingredients/ingredients.service.ts` | Tạo mới | Xử lý tồn/công thức/audit và trừ nguyên liệu đồng thời trong transaction tạo đơn. |
 | `apps/api/src/ingredients/entities/ingredient.entity.ts` | Tạo mới | Lưu tên, mã, đơn vị, tồn, ngưỡng cảnh báo và version nguyên liệu. |
 | `apps/api/src/ingredients/entities/ingredient-recipe.entity.ts` | Tạo mới | Lưu định lượng nguyên liệu cần cho mỗi sản phẩm. |
@@ -114,6 +132,7 @@ Size/topping và catalog hiện dùng dữ liệu, quy tắc giá mẫu; cần �
 | `apps/api/src/ingredients/dto/update-ingredient.dto.ts` | Tạo mới | Validate thông tin nguyên liệu được phép cập nhật. |
 | `apps/api/src/ingredients/dto/adjust-ingredient-stock.dto.ts` | Tạo mới | Validate lượng và lý do nhập/xuất kho. |
 | `apps/api/src/ingredients/dto/replace-product-recipe.dto.ts` | Tạo mới | Validate danh sách thành phần của công thức sản phẩm. |
+| `apps/api/src/ingredients/dto/create-topping.dto.ts` | Tạo mới | Validate topping mới và liên kết tới kho nguyên liệu dùng chung. |
 | `apps/api/src/orders/orders.module.ts` | Chỉnh sửa | Kết nối IngredientsModule với luồng đơn hàng. |
 | `apps/api/src/orders/orders.service.ts` | Chỉnh sửa | Lọc hàng đợi theo trạng thái lưu trữ; hỗ trợ nhân viên hủy đơn theo state machine; tích hợp trừ/hoàn tồn nguyên liệu theo transaction. |
 | `apps/api/src/orders/dto/staff-order-query.dto.ts` | Chỉnh sửa | Cho phép lọc các trạng thái đơn bao gồm `COMPLETED` và `CANCELLED`. |
@@ -123,8 +142,9 @@ Size/topping và catalog hiện dùng dữ liệu, quy tắc giá mẫu; cần �
 | `apps/web/src/app/staff/login/page.tsx` | Tạo mới | Cổng đăng nhập nhân viên riêng, dùng Auth API/JWT và chặn CUSTOMER. |
 | `apps/web/src/app/staff/login/page.test.tsx` | Tạo mới | Kiểm tra chuyển hướng STAFF, từ chối CUSTOMER và return URL an toàn. |
 | `apps/web/src/app/staff/ingredients/page.tsx` | Tạo mới | Route `/staff/ingredients`. |
-| `apps/web/src/components/staff-ingredients-panel.tsx` | Tạo mới | Giao diện quản lý nguyên liệu, chỉnh tồn, ngưỡng cảnh báo và BOM. |
-| `apps/web/src/components/staff-ingredients-panel.test.tsx` | Tạo mới | Kiểm tra tải kho và lưu công thức qua API. |
+| `apps/web/src/components/staff-inventory-workspace.tsx` | Tạo mới | Giao diện bốn tab kho nguyên liệu/vật tư/topping và công thức; nhập/xuất qua cùng nguồn kho. |
+| `apps/web/src/components/staff-ingredients-panel.tsx` | Chỉnh sửa | Giữ export component cũ để tương thích các route đang sử dụng. |
+| `apps/web/src/components/staff-ingredients-panel.test.tsx` | Chỉnh sửa | Kiểm tra tách kho dùng chung khỏi công thức và luồng điều chỉnh kho. |
 | `apps/web/src/components/staff-orders-panel.tsx` | Chỉnh sửa | Thêm bộ lọc đơn đã hoàn thành/đã hủy và nút hủy có xác nhận. |
 | `apps/web/src/components/staff-orders-panel.test.tsx` | Tạo mới | Kiểm tra lọc trạng thái lưu trữ và gửi thao tác hủy Staff. |
 | `apps/web/src/components/staff-shell.tsx` | Chỉnh sửa | Thêm điều hướng quản lý nguyên liệu và đưa phiên chưa đăng nhập tới Staff Login. |
@@ -250,8 +270,8 @@ Docker Compose đọc `DB_USER`, `DB_PASSWORD`, `DB_NAME` để khởi tạo Pos
 | `POST` | `/auth/login` | Đăng nhập và nhận JWT | Không |
 | `GET` | `/auth/me` | Thông tin tài khoản và điểm thành viên hiện tại | Có |
 | `POST` | `/orders` | Tạo đơn từ các sản phẩm/tùy chọn; backend kiểm tra và tính lại giá | Có |
-| `POST` | `/orders/preview` | Xem trước subtotal, coupon, điểm đổi và số tiền phải trả; không tạo đơn/giữ kho/trừ điểm | Có |
-| `GET` | `/inventory` | Tồn kho hiện tại theo sản phẩm | Không |
+| `POST` | `/orders/preview` | Xem trước giá và kiểm tra tổng nhu cầu nguyên liệu của giỏ; chỉ đọc tồn kho | Có |
+| `GET` | `/inventory` | Số ly tối đa theo công thức và tồn nguyên liệu; giữ các trường phản hồi cũ | Không |
 | `GET` | `/orders/me` | Lịch sử đơn hàng của tài khoản đang đăng nhập | Có |
 | `GET` | `/orders/:id` | Chi tiết đơn, chỉ chủ đơn mới xem được | Có |
 | `POST` | `/orders/:id/cancel` | Chủ đơn hủy đơn ở trạng thái được phép; hoàn kho một lần | Có |
@@ -265,6 +285,14 @@ Docker Compose đọc `DB_USER`, `DB_PASSWORD`, `DB_NAME` để khởi tạo Pos
 | `GET` | `/ingredients/:id/adjustments` | Xem 20 điều chỉnh kho gần nhất | Có (vai trò `STAFF`) |
 | `GET` | `/ingredients/recipes` | Xem công thức theo sản phẩm | Có (vai trò `STAFF`) |
 | `PUT` | `/ingredients/recipes/:productId` | Thay thế công thức định lượng nguyên liệu cho sản phẩm | Có (vai trò `STAFF`) |
+| `PUT` | `/ingredients/recipes/:productId/:size` | Lưu công thức S/M/L ở trạng thái chờ xác nhận; danh sách rỗng xóa công thức size, không tự áp dụng công thức chung | Có (vai trò `STAFF`) |
+| `PATCH` | `/ingredients/recipes/:productId/:size/confirm` | Xác nhận công thức size hợp lệ để tính tồn và cho phép đặt | Có (vai trò `STAFF`) |
+| `PUT` | `/ingredients/packaging-recipes/:productId/:size` | Cấu hình vật tư đóng gói tiêu hao theo món/đơn/nhóm | Có (vai trò `STAFF`) |
+| `PUT` | `/ingredients/topping-recipes/:productId/:size` | Tương thích dữ liệu/quy tắc topping cũ; không cần cấu hình để dùng topping toàn menu | Có (vai trò `STAFF`) |
+| `GET` | `/toppings?productId=:id&size=S` | Danh mục topping đang bật, dùng chung cho mọi sản phẩm-size, giới hạn theo tồn kho | Không |
+| `GET` | `/toppings/staff` | Danh mục topping cho cấu hình nhân viên | Có (vai trò `STAFF`) |
+| `POST` | `/toppings` | Tạo danh mục topping liên kết tới một nguyên liệu kho dùng chung; topping mới mặc định tắt bán | Có (vai trò `STAFF`) |
+| `PATCH` | `/toppings/:id` | Cập nhật tên/giá/trạng thái và nguyên liệu kho được liên kết | Có (vai trò `STAFF`) |
 | `GET` | `/promotions` | Danh sách mã khuyến mãi còn hiệu lực | Không |
 | `GET` | `/promotions/staff` | Danh sách đầy đủ để quản lý khuyến mãi | Có (vai trò `STAFF`) |
 | `POST` | `/promotions` | Tạo mã khuyến mãi | Có (vai trò `STAFF`) |
@@ -275,7 +303,13 @@ Docker Compose đọc `DB_USER`, `DB_PASSWORD`, `DB_NAME` để khởi tạo Pos
 
 `POST /orders` nhận `items`, `promoCode` và `redeemPoints` tùy chọn. Giá, tồn kho, số dư điểm, tính hợp lệ/lượt dùng mã đều được backend xác minh; tổng tiền client không được dùng. Mỗi điểm đổi giảm 100 VND, điểm bị giữ trong cùng transaction với việc tạo đơn và được hoàn khi hủy đơn. Điểm thưởng chỉ được cộng sau khi thanh toán mô phỏng thành công. Mã mẫu được seed bằng migration: `BREW10` giảm 10% (đơn tối thiểu 20.000 VND, giảm tối đa 15.000 VND) và `WELCOME5000` giảm 5.000 VND (đơn tối thiểu 30.000 VND).
 
-`POST /orders/preview` nhận cùng cấu trúc `items`, `promoCode`, `redeemPoints` và dùng chung hàm định giá với `POST /orders`. API xác thực điều kiện coupon và số dư điểm nhưng không tạo đơn, không giữ kho, không tăng lượt dùng mã và không trừ điểm. Giỏ hàng làm mới preview khi đổi số lượng hoặc áp mã/điểm. `POST /orders` tính lại toàn bộ giá và kiểm tra điều kiện trong transaction; preview chỉ là báo giá, không đảm bảo kho/khuyến mãi vẫn còn cho đến lúc đặt.
+`GET /inventory` tính số ly tối đa của mỗi món và size theo định lượng giới hạn nhất trong công thức; phản hồi bổ sung `recipeConfigured` để phân biệt món chưa có công thức với món hết nguyên liệu. Web làm mới dữ liệu tồn kho mỗi 10 giây khi trang hiển thị và khi người dùng quay lại.
+
+`POST /orders/preview` nhận cùng cấu trúc `items`, `promoCode`, `redeemPoints` và dùng chung hàm định giá với `POST /orders`. API cộng nhu cầu của mọi dòng theo từng nguyên liệu và trả `inventory.available`, `inventory.shortages` cùng `inventory.unconfiguredProducts`; bước preview chỉ đọc tồn kho, không giữ kho, tạo đơn, tăng lượt dùng mã hay trừ điểm. Giỏ hàng chạy lại preview khi thay đổi và định kỳ khi đang mở. `POST /orders` tính lại toàn bộ giá và nhu cầu trong transaction; nếu thiếu nguyên liệu hoặc bước lưu đơn thất bại, toàn bộ thay đổi kho được rollback. Preview không đảm bảo kho/khuyến mãi vẫn còn đến lúc đặt.
+
+Topping được gửi theo `toppings: [{ id, quantity }]` trên từng dòng hàng; tất cả topping đang bật áp dụng toàn menu, không cấu hình từng sản phẩm-size và không có quota thủ công. Backend cộng nhu cầu nguyên liệu topping với toàn bộ giỏ, giới hạn bằng tồn kho thực tế, rồi kiểm tra/tiêu hao trong cùng lượt preview/transaction với nguyên liệu và vật tư. Khi hủy đơn đủ điều kiện, backend hoàn theo snapshot đã lưu lúc tạo đơn, không tính lại theo công thức hiện tại. Quy tắc bao bì chưa cấu hình thì không tiêu hao; khi đã cấu hình, thiếu hoặc không đủ vật tư sẽ chặn đơn.
+
+Topping liên kết trực tiếp tới một nguyên liệu làm nguồn tồn kho duy nhất; định lượng một phần dùng chung được lưu trên topping và số phần khả dụng là `FLOOR(tồn / định lượng)`. Ly được khai báo tại tab Kho vật tư với nhóm `CUP` (hoặc `LY`) và size tương thích; hệ thống tiêu hao ly tương ứng tự động cho mọi đồ uống cùng size, không cần thêm ly vào từng công thức.
 
 `POST /payments` nhận JSON dạng `{"orderId":"<UUID>","method":"WALLET"}`; `method` hỗ trợ `WALLET` và `CARD`. Bắt buộc gửi header `Idempotency-Key` có 8–128 ký tự ASCII in được. API lấy số tiền từ đơn đã lưu, không nhận `amount` từ client, đồng thời chỉ cho chủ đơn thanh toán. Dùng lại key cùng payload trả kết quả đã lưu; cùng key với payload khác trả `409 Conflict`. API trả `SUCCESS`/`PAID` hoặc `FAILED`/`PAYMENT_FAILED` trong HTTP 201. Body chỉ được gửi `"simulateFailure":true` khi `PAYMENT_DEMO_ENABLED=true`; production mặc định tắt lựa chọn này.
 
@@ -301,7 +335,7 @@ Khi mock thất bại, response có `status: "FAILED"` và `orderStatus: "PAYMEN
 
 Mọi đơn mới bắt đầu ở `PENDING` và giữ chỗ tồn kho trong PostgreSQL. `PaymentProvider` hiện chỉ có adapter `MOCK`; QR hiển thị trên trang checkout chỉ mã hóa payload demo và không kết nối ứng dụng ngân hàng, không xác nhận giao dịch và không thu tiền. Để bật checkbox giả lập thất bại trong môi trường local, đặt `PAYMENT_DEMO_ENABLED=true` trong `.env` rồi tạo lại API: `docker compose up -d --build api`. Không bật chế độ này ở production.
 
-State machine cho phép `PENDING → PAID/PAYMENT_FAILED/CANCELLED`, `PAYMENT_FAILED → PENDING/CANCELLED`, `PAID → PREPARING/CANCELLED`, `PREPARING → READY`, `READY → COMPLETED`. Nhân viên chỉ có thể hủy các trạng thái có cạnh chuyển hợp lệ; không thể hủy đơn đang pha chế/đã hoàn thành/đã hủy. Lệnh hủy giữ đơn trong database, giải phóng tồn sản phẩm và nguyên liệu theo snapshot, hoàn điểm đã dùng/thu hồi điểm thưởng nếu có và giảm lượt dùng mã đúng một lần; **không hoàn tiền**. Tồn sản phẩm mẫu bắt đầu ở 100; migration nguyên liệu tạo định lượng mẫu (cà phê sữa: 18g hạt + 120ml sữa; bạc xỉu: 18g hạt + 80ml sữa; trà đào cam sả: 20g trà + 10g sả). Đây là dữ liệu giả định phục vụ demo; cần thay bằng công thức và tồn thực tế trước khi vận hành.
+State machine cho phép `PENDING → PAID/PAYMENT_FAILED/CANCELLED`, `PAYMENT_FAILED → PENDING/CANCELLED`, `PAID → PREPARING/CANCELLED`, `PREPARING → READY`, `READY → COMPLETED`. Nhân viên chỉ có thể hủy các trạng thái có cạnh chuyển hợp lệ; không thể hủy đơn đang pha chế/đã hoàn thành/đã hủy. Lệnh hủy giữ đơn trong database, hoàn nguyên liệu theo snapshot, hoàn điểm đã dùng/thu hồi điểm thưởng nếu có và giảm lượt dùng mã đúng một lần; **không hoàn tiền**. Công thức mẫu gồm cà phê sữa: 18g hạt + 120ml sữa đặc; bạc xỉu: 18g hạt + 80ml sữa tươi; trà đào cam sả: 20g trà + 10g sả. Sữa đặc được tạo với tồn ban đầu bằng 0; nhân viên cần nhập tồn trước khi bán cà phê sữa. Định lượng là dữ liệu giả định phục vụ demo; cần thay bằng công thức và tồn thực tế trước khi vận hành.
 
 ## 8. Hướng dẫn sử dụng
 
@@ -388,6 +422,10 @@ Kiểm thử giao diện trên trình duyệt xác nhận đăng ký/đăng nh�
 Kiểm tra thay đổi giao diện và pricing preview: API build/lint và **55/55 unit tests** đạt; PostgreSQL 17 biệt lập **12/12 integration tests** đạt, bao gồm preview coupon/điểm không làm thay đổi dữ liệu, hàng đợi staff và thống kê trạng thái. Web TypeScript/lint/build và **22/22 unit tests** đạt; bộ test bao gồm role-based redirect, StaffShell, preview coupon/điểm và checkout theo bước QR. Docker Compose cấu hình hợp lệ, ba dịch vụ healthy; smoke test Web và API công khai đạt, các API preview/staff từ chối request không JWT bằng `401`. Database hiện hữu trước/sau rebuild giữ nguyên số bản ghi kiểm tra (2 user, 17 orders, 23 order items, 10 payments, 3 inventory rows). Trình duyệt xác nhận `/staff/orders` chưa đăng nhập được chuyển đến login và trang giỏ ở mobile viewport không tràn ngang; StaffShell xác minh role được kiểm tra thêm qua unit test.
 
 Kiểm tra nâng cấp sau Task 10 (10/11/2026): API lint/build và **55/55 unit tests** đạt; PostgreSQL 17 tạm biệt lập chạy **18/18 integration tests**, gồm tiêu hao/hoàn nguyên liệu, chống bán vượt tồn đồng thời, audit điều chỉnh, recipe bắt buộc, state machine và lịch sử đơn đã hoàn thành/đã hủy. Web lint/TypeScript/build đạt và **29/29 unit tests**; có test cổng STAFF riêng, CUSTOMER bị từ chối, return URL checkout, quản lý công thức và thao tác hủy/lọc lịch sử. Migration `1710000005000-CreateIngredientInventory` đã áp trên Docker Compose hiện có; các bảng cũ giữ nguyên số dòng (2 users, 22 orders, 31 order items, 15 payments, 3 product inventory), đồng thời tạo 4 nguyên liệu, 6 công thức và bảng audit mới. Cả ba dịch vụ Compose healthy; HTTP smoke test `/products` và hai route Staff trả `200`, API `/ingredients` thiếu JWT trả `401`. Trình duyệt xác nhận `/staff/login` hiển thị giao diện độc lập và truy cập `/staff/ingredients` khi chưa đăng nhập chuyển về cổng Staff login. Không xóa database/volume.
+
+Kiểm tra thiết kế lại kho (10/11/2026): API **68/68 unit tests**, Web **37/37 unit tests**, API/Web build và lint đều đạt. PostgreSQL Compose đã áp migration `1710000010000-LinkExistingToppingsToIngredients`; `/inventory`, topping và Staff workspace trả HTTP 200; dữ liệu cũ giữ nguyên (3 users, 25 orders, 30 order items). Ba topping hiện được nối lần lượt tới `CREAM_CHEESE` (g), `ESPRESSO` (ml), `PEARLS` (g), giữ giá và lượng tồn hiện hữu; chưa đặt liều mỗi phần hay bật bán. Không có công thức espresso từ hạt cà phê nên không tự suy diễn tỷ lệ. Integration test cần DB tách biệt được biên dịch nhưng bỏ qua có chủ đích khi `TEST_DB_ALLOW_MUTATIONS=0`.
+
+Kiểm tra yêu cầu topping toàn menu: cấu hình topping đã bật tại Kho topping tự áp dụng cho mọi sản phẩm-size hiện có và tương lai; công thức đồ uống không còn cần thêm topping từng size. Số phần khách chọn không bị giới hạn bởi recipe, nhưng vẫn bị giới hạn và kiểm tra theo tồn kho nguyên liệu dùng chung trong preview/transaction đặt hàng. Trang công thức chỉ hiển thị danh sách topping toàn menu; các quy tắc topping sản phẩm-size cũ được giữ lại nhưng không còn điều khiển khả dụng.
 
 ## 10. Tiến độ Assignment 1
 

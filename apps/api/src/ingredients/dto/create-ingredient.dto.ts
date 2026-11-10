@@ -1,4 +1,4 @@
-import { IsInt, IsNotEmpty, IsString, Matches, Max, MaxLength, Min } from 'class-validator';
+import { IsArray, IsIn, IsInt, IsNotEmpty, IsOptional, IsString, Matches, Max, MaxLength, Min } from 'class-validator';
 
 export class CreateIngredientDto {
   @IsString()
@@ -27,4 +27,18 @@ export class CreateIngredientDto {
   @Min(0)
   @Max(2_147_483_647)
   warningThreshold!: number;
+
+  @IsOptional()
+  @IsIn(['INGREDIENT', 'PACKAGING'])
+  kind?: 'INGREDIENT' | 'PACKAGING';
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(40)
+  category?: string | null;
+
+  @IsOptional()
+  @IsArray()
+  @IsIn(['S', 'M', 'L'], { each: true })
+  compatibleSizes?: Array<'S' | 'M' | 'L'>;
 }

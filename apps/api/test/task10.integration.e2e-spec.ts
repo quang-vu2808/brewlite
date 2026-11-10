@@ -11,7 +11,7 @@ import { RedemptionAndPromotionRules1710000004000 } from '../src/database/migrat
 import { OrderEntity } from '../src/orders/entities/order.entity';
 import { OrderItemEntity } from '../src/orders/entities/order-item.entity';
 import { ProductInventoryEntity } from '../src/orders/entities/product-inventory.entity';
-import { InventoryService } from '../src/orders/inventory.service';
+import { InventoryController } from '../src/orders/inventory.controller';
 import { OrdersService } from '../src/orders/orders.service';
 import { PaymentEntity, PaymentMethod } from '../src/payments/payment.entity';
 import { PaymentsService } from '../src/payments/payments.service';
@@ -24,8 +24,21 @@ import { IngredientEntity } from '../src/ingredients/entities/ingredient.entity'
 import { IngredientRecipeEntity } from '../src/ingredients/entities/ingredient-recipe.entity';
 import { OrderIngredientConsumptionEntity } from '../src/ingredients/entities/order-ingredient-consumption.entity';
 import { CreateIngredientInventory1710000005000 } from '../src/database/migrations/1710000005000-CreateIngredientInventory';
+import { UseCondensedMilkForCoffee1710000006000 } from '../src/database/migrations/1710000006000-UseCondensedMilkForCoffee';
 import { IngredientsService } from '../src/ingredients/ingredients.service';
 import { IngredientAdjustmentEntity } from '../src/ingredients/entities/ingredient-adjustment.entity';
+import {
+  ProductPackagingRecipeEntity,
+  ProductSizeRecipeEntity,
+  ProductSizeRecipeItemEntity,
+  ProductToppingRecipeEntity,
+  ToppingEntity,
+} from '../src/ingredients/entities/product-size-recipe.entity';
+import { RecipesPackagingAndToppings1710000007000 } from '../src/database/migrations/1710000007000-RecipesPackagingAndToppings';
+import { EnsureProductToppingRecipes1710000008000 } from '../src/database/migrations/1710000008000-EnsureProductToppingRecipes';
+import { SharedToppingPortionQuantity1710000009000 } from '../src/database/migrations/1710000009000-SharedToppingPortionQuantity';
+import { LinkExistingToppingsToIngredients1710000010000 } from '../src/database/migrations/1710000010000-LinkExistingToppingsToIngredients';
+import { UseSharedToppingPortionInConstraint1710000011000 } from '../src/database/migrations/1710000011000-UseSharedToppingPortionInConstraint';
 
 const enabled = process.env.TEST_DB_ALLOW_MUTATIONS === '1' &&
   Boolean(process.env.TEST_DB_NAME && process.env.TEST_DB_PASSWORD);
@@ -60,6 +73,11 @@ describeWithDatabase('Task 10 PostgreSQL integration', () => {
         IngredientRecipeEntity,
         OrderIngredientConsumptionEntity,
         IngredientAdjustmentEntity,
+        ProductSizeRecipeEntity,
+        ProductSizeRecipeItemEntity,
+        ProductPackagingRecipeEntity,
+        ProductToppingRecipeEntity,
+        ToppingEntity,
       ],
       migrations: [
         CreateOrders1710000000000,
@@ -68,6 +86,12 @@ describeWithDatabase('Task 10 PostgreSQL integration', () => {
         Task10BusinessRules1710000003000,
         RedemptionAndPromotionRules1710000004000,
         CreateIngredientInventory1710000005000,
+        UseCondensedMilkForCoffee1710000006000,
+        RecipesPackagingAndToppings1710000007000,
+        EnsureProductToppingRecipes1710000008000,
+        SharedToppingPortionQuantity1710000009000,
+        LinkExistingToppingsToIngredients1710000010000,
+        UseSharedToppingPortionInConstraint1710000011000,
       ],
       migrationsRun: true,
       synchronize: false,
@@ -79,7 +103,6 @@ describeWithDatabase('Task 10 PostgreSQL integration', () => {
     orders = new OrdersService(
       dataSource,
       new ProductsService(),
-      new InventoryService(),
       ingredients,
     );
     promotions = new PromotionsService(dataSource);
@@ -93,17 +116,27 @@ describeWithDatabase('Task 10 PostgreSQL integration', () => {
 
   beforeEach(async () => {
     await dataSource.query(
-      'UPDATE "product_inventory" SET "stock" = 1, "version" = "version" + 1 WHERE "product_id" = 1',
-    );
-    const inventory = await dataSource.getRepository(ProductInventoryEntity)
-      .findOneByOrFail({ productId: 1 });
-    expect(inventory.stock).toBe(1);
-    await dataSource.query(
       'UPDATE "ingredients" SET "stock" = 10000, "version" = "version" + 1',
     );
   });
 
   afterEach(async () => {
+    await dataSource.query('DELETE FROM "product_topping_recipes" WHERE "product_id" IN (1, 2)');
+    await dataSource.query('DELETE FROM "product_packaging_recipes" WHERE "product_id" IN (1, 2)');
+    await dataSource.query('DELETE FROM "product_size_recipes" WHERE "product_id" IN (1, 2)');
+    await dataSource.query(`
+      UPDATE "toppings" topping
+      SET "ingredient_id" = ingredient.id,
+          "is_active" = false,
+          "portion_quantity_required" = NULL
+      FROM (VALUES
+        ('cheese-foam', 'CREAM_CHEESE'),
+        ('espresso', 'ESPRESSO'),
+        ('pearls', 'PEARLS')
+      ) AS mapping(topping_id, ingredient_code)
+      JOIN "ingredients" ingredient ON ingredient.code = mapping.ingredient_code
+      WHERE topping.id = mapping.topping_id
+    `);
     if (promotionCodes.length > 0) {
       await dataSource.getRepository(PromotionEntity).delete({ code: In(promotionCodes) });
       promotionCodes.length = 0;
@@ -120,6 +153,7 @@ describeWithDatabase('Task 10 PostgreSQL integration', () => {
       await dataSource.getRepository(UserEntity).delete({ id: In(userIds) });
       userIds.length = 0;
     }
+    await dataSource.query('DELETE FROM "ingredients" WHERE "code" = $1', ['TEST_CUP']);
     await dataSource.query(
       'UPDATE "product_inventory" SET "stock" = 100, "version" = "version" + 1 WHERE "product_id" = 1',
     );
@@ -147,6 +181,212 @@ describeWithDatabase('Task 10 PostgreSQL integration', () => {
     }, userId);
   }
 
+  it('uses condensed milk for coffee and keeps fresh milk in the bac xiu recipe', async () => {
+    const recipes = await ingredients.listRecipes();
+    const coffee = recipes.find((recipe) => recipe.productId === 1);
+    const bacXiu = recipes.find((recipe) => recipe.productId === 2);
+    expect(coffee?.items).toEqual(expect.arrayContaining([
+      expect.objectContaining({ ingredientName: 'Sữa đặc', quantityRequired: 120 }),
+    ]));
+    expect(coffee?.items).not.toEqual(expect.arrayContaining([
+      expect.objectContaining({ ingredientName: 'Sữa tươi' }),
+    ]));
+    expect(bacXiu?.items).toEqual(expect.arrayContaining([
+      expect.objectContaining({ ingredientName: 'Sữa tươi', quantityRequired: 80 }),
+    ]));
+  });
+
+  it('reflects ingredient adjustments, orders and cancellations in available stock', async () => {
+    const staff = await createUser('STAFF');
+    const user = await createUser();
+    const milk = await dataSource.getRepository(IngredientEntity).findOneByOrFail({ code: 'CONDENSED_MILK' });
+    await dataSource.getRepository(ProductInventoryEntity).update({ productId: 1 }, { stock: 0 });
+    await ingredients.adjustStock(milk.id, 240 - milk.stock, 'Set test stock', staff.id);
+    const inventory = new InventoryController(ingredients);
+    const stock = async () => (await inventory.findAll()).find((item) => item.productId === 1)?.stock;
+
+    expect(await stock()).toBe(2);
+    const order = await createOrder(user.id);
+    expect(await stock()).toBe(1);
+    await orders.cancelForUser(order.id, user.id);
+    expect(await stock()).toBe(2);
+    await ingredients.adjustStock(milk.id, 120, 'Restock for test', staff.id);
+    expect(await stock()).toBe(3);
+  });
+
+  it('updates both products when an order consumes their shared coffee beans', async () => {
+    const user = await createUser();
+    const staff = await createUser('STAFF');
+    const coffee = await dataSource.getRepository(IngredientEntity)
+      .findOneByOrFail({ code: 'COFFEE_BEANS' });
+    const recipes = await ingredients.listRecipes();
+    const coffeeMilkRecipe = recipes.find((recipe) => recipe.productId === 1);
+    const bacXiuRecipe = recipes.find((recipe) => recipe.productId === 2);
+    const coffeeMilkDose = coffeeMilkRecipe?.items.find(
+      (item) => item.ingredientId === coffee.id,
+    )?.quantityRequired;
+    const bacXiuDose = bacXiuRecipe?.items.find(
+      (item) => item.ingredientId === coffee.id,
+    )?.quantityRequired;
+    expect(coffeeMilkDose).toBeGreaterThan(0);
+    expect(bacXiuDose).toBeGreaterThan(0);
+    if (!coffeeMilkDose || !bacXiuDose) {
+      throw new Error('Both recipes must use the shared coffee ingredient');
+    }
+
+    const divisor = (left: number, right: number): number =>
+      right === 0 ? left : divisor(right, left % right);
+    const sharedStockStep = (coffeeMilkDose / divisor(coffeeMilkDose, bacXiuDose)) * bacXiuDose;
+    const initialStock = sharedStockStep * 2;
+    const expectedStocks = (stock: number) => [
+      Math.floor(stock / coffeeMilkDose),
+      Math.floor(stock / bacXiuDose),
+    ];
+    await dataSource.getRepository(IngredientEntity).update(
+      { id: coffee.id },
+      { stock: initialStock, version: coffee.version + 1 },
+    );
+    const inventory = new InventoryController(ingredients);
+    const stocks = async () => (await inventory.findAll()).slice(0, 2).map((item) => item.stock);
+
+    expect(await stocks()).toEqual(expectedStocks(initialStock));
+    await ingredients.adjustStock(coffee.id, sharedStockStep, 'Test shared recipe restock', staff.id);
+    expect(await stocks()).toEqual(expectedStocks(initialStock + sharedStockStep));
+    await ingredients.adjustStock(coffee.id, -sharedStockStep, 'Restore test stock', staff.id);
+    expect(await stocks()).toEqual(expectedStocks(initialStock));
+
+    const bacXiuOrder = await orders.create({
+      items: [{ productId: 2, size: 'S', toppings: [], quantity: 1 }],
+    }, user.id);
+    expect((await dataSource.getRepository(IngredientEntity)
+      .findOneByOrFail({ id: coffee.id })).stock).toBe(initialStock - bacXiuDose);
+    expect(await stocks()).toEqual(expectedStocks(initialStock - bacXiuDose));
+    await orders.cancelForUser(bacXiuOrder.id, user.id);
+
+    const coffeeMilkOrder = await createOrder(user.id);
+    expect((await dataSource.getRepository(IngredientEntity)
+      .findOneByOrFail({ id: coffee.id })).stock).toBe(initialStock - coffeeMilkDose);
+    expect(await stocks()).toEqual(expectedStocks(initialStock - coffeeMilkDose));
+    await orders.cancelForUser(coffeeMilkOrder.id, user.id);
+
+    const combinedOrder = await orders.create({
+      items: [
+        { productId: 1, size: 'S', toppings: [], quantity: 1 },
+        { productId: 2, size: 'S', toppings: [], quantity: 1 },
+      ],
+    }, user.id);
+    const combinedConsumption = coffeeMilkDose + bacXiuDose;
+    expect((await dataSource.getRepository(IngredientEntity)
+      .findOneByOrFail({ id: coffee.id })).stock).toBe(initialStock - combinedConsumption);
+    expect(await stocks()).toEqual(expectedStocks(initialStock - combinedConsumption));
+    await orders.cancelForUser(combinedOrder.id, user.id);
+  });
+
+  it('uses size-specific recipes and atomically consumes configured packaging and topping stock', async () => {
+    const user = await createUser();
+    const coffee = await dataSource.getRepository(IngredientEntity)
+      .findOneByOrFail({ code: 'COFFEE_BEANS' });
+    const condensedMilk = await dataSource.getRepository(IngredientEntity)
+      .findOneByOrFail({ code: 'CONDENSED_MILK' });
+    await dataSource.getRepository(IngredientEntity).update(
+      { id: coffee.id },
+      { stock: 100, version: coffee.version + 1 },
+    );
+    const cup = await dataSource.getRepository(IngredientEntity).save({
+      name: 'Test S cup',
+      code: 'TEST_CUP',
+      unit: 'piece',
+      stock: 10,
+      warningThreshold: 0,
+      kind: 'PACKAGING',
+      category: 'CUP',
+      isActive: true,
+      compatibleSizes: ['S'],
+    });
+
+    await ingredients.replaceSizeRecipe(1, 'S', [
+      { ingredientId: coffee.id, quantityRequired: 10 },
+      { ingredientId: condensedMilk.id, quantityRequired: 20 },
+    ]);
+    await ingredients.updateTopping('pearls', {
+      ingredientId: coffee.id,
+      isActive: true,
+      portionQuantityRequired: 10,
+    });
+    await ingredients.replaceProductToppings(1, 'S', [{
+      toppingId: 'pearls',
+      quantityRequired: 10,
+      maxPortions: 2,
+    }]);
+
+    const inventory = new InventoryController(ingredients);
+    const productStock = (await inventory.findAll()).find((item) => item.productId === 1);
+    expect(productStock?.sizes).toEqual(expect.arrayContaining([
+      expect.objectContaining({ size: 'S', stock: 10, recipeConfigured: true, usesSharedRecipe: false }),
+      expect.objectContaining({ size: 'M', recipeConfigured: true, usesSharedRecipe: true }),
+    ]));
+
+    const order = await orders.create({
+      items: [{
+        productId: 1,
+        size: 'S',
+        toppings: [{ id: 'pearls', quantity: 2 }],
+        quantity: 2,
+      }],
+    }, user.id);
+    expect((await dataSource.getRepository(IngredientEntity).findOneByOrFail({ id: coffee.id })).stock)
+      .toBe(40);
+    expect((await dataSource.getRepository(IngredientEntity).findOneByOrFail({ id: cup.id })).stock)
+      .toBe(8);
+
+    await orders.cancelForUser(order.id, user.id);
+    expect((await dataSource.getRepository(IngredientEntity).findOneByOrFail({ id: coffee.id })).stock)
+      .toBe(100);
+    expect((await dataSource.getRepository(IngredientEntity).findOneByOrFail({ id: cup.id })).stock)
+      .toBe(10);
+    await orders.cancelForUser(order.id, user.id);
+    expect((await dataSource.getRepository(IngredientEntity).findOneByOrFail({ id: cup.id })).stock)
+      .toBe(10);
+  });
+
+  it('offers global toppings for future products and sizes without a per-product rule', async () => {
+    const user = await createUser();
+    const pearls = await dataSource.getRepository(IngredientEntity)
+      .findOneByOrFail({ code: 'PEARLS' });
+    await dataSource.getRepository(IngredientEntity).update(
+      { id: pearls.id },
+      { stock: 100, version: pearls.version + 1 },
+    );
+    await ingredients.updateTopping('pearls', {
+      ingredientId: pearls.id,
+      portionQuantityRequired: 25,
+      isActive: true,
+    });
+
+    await expect(ingredients.findToppingsForProduct(2, 'L')).resolves.toEqual([
+      expect.objectContaining({
+        id: 'pearls',
+        available: true,
+        availablePortions: 4,
+        maxPortions: 4,
+      }),
+    ]);
+
+    const order = await orders.create({
+      items: [{
+        productId: 2,
+        size: 'L',
+        toppings: [{ id: 'pearls', quantity: 2 }],
+        quantity: 1,
+      }],
+    }, user.id);
+    expect((await dataSource.getRepository(IngredientEntity).findOneByOrFail({ id: pearls.id })).stock)
+      .toBe(50);
+    await orders.cancelForUser(order.id, user.id);
+    expect((await dataSource.getRepository(IngredientEntity).findOneByOrFail({ id: pearls.id })).stock)
+      .toBe(100);
+  });
+
   it('previews coupon and loyalty pricing without consuming stock, points, or promotion usage', async () => {
     const user = await createUser();
     await dataSource.getRepository(UserEntity).update({ id: user.id }, { loyaltyPoints: 100 });
@@ -165,8 +405,8 @@ describeWithDatabase('Task 10 PostgreSQL integration', () => {
       usageCount: 0,
     });
 
-    const beforeStock = await dataSource.getRepository(ProductInventoryEntity)
-      .findOneByOrFail({ productId: 1 });
+    const beforeStock = await dataSource.getRepository(IngredientEntity)
+      .findOneByOrFail({ code: 'CONDENSED_MILK' });
     const preview = await orders.preview({
       items: [{ productId: 1, size: 'S', toppings: [], quantity: 1 }],
       promoCode: code,
@@ -184,8 +424,8 @@ describeWithDatabase('Task 10 PostgreSQL integration', () => {
     expect(await dataSource.getRepository(OrderEntity).countBy({ userId: user.id })).toBe(0);
     expect((await dataSource.getRepository(UserEntity).findOneByOrFail({ id: user.id })).loyaltyPoints)
       .toBe(100);
-    expect((await dataSource.getRepository(ProductInventoryEntity)
-      .findOneByOrFail({ productId: 1 })).stock).toBe(beforeStock.stock);
+    expect((await dataSource.getRepository(IngredientEntity)
+      .findOneByOrFail({ id: beforeStock.id })).stock).toBe(beforeStock.stock);
     expect((await dataSource.getRepository(PromotionEntity).findOneByOrFail({ code })).usageCount)
       .toBe(0);
 
@@ -201,6 +441,71 @@ describeWithDatabase('Task 10 PostgreSQL integration', () => {
       totalAmount: preview.totalAmount,
       redeemedPoints: preview.redeemedPoints,
     });
+  });
+
+  it('checks combined shared-ingredient cart demand and restores the original consumption snapshot', async () => {
+    const user = await createUser();
+    const sharedMilk = await dataSource.getRepository(IngredientEntity)
+      .findOneByOrFail({ code: 'FRESH_MILK' });
+    const coffeeBeans = await dataSource.getRepository(IngredientEntity)
+      .findOneByOrFail({ code: 'COFFEE_BEANS' });
+    const originalRecipes = await Promise.all([1, 2].map((productId) =>
+      dataSource.getRepository(IngredientRecipeEntity).findBy({ productId }),
+    ));
+
+    try {
+      await dataSource.getRepository(IngredientEntity).update(
+        { id: sharedMilk.id },
+        { stock: 300, version: sharedMilk.version + 1 },
+      );
+      await Promise.all([1, 2].map((productId) =>
+        ingredients.replaceRecipe(productId, [{
+          ingredientId: sharedMilk.id,
+          quantityRequired: 100,
+        }]),
+      ));
+
+      const shortPreview = await orders.preview({
+        items: [
+          { productId: 1, size: 'S', toppings: [], quantity: 2 },
+          { productId: 2, size: 'S', toppings: [], quantity: 2 },
+        ],
+      }, user.id);
+      expect(shortPreview.inventory).toMatchObject({
+        available: false,
+        shortages: [expect.objectContaining({ required: 400, available: 300 })],
+      });
+
+      const fittingCart = {
+        items: [
+          { productId: 1, size: 'S' as const, toppings: [], quantity: 2 },
+          { productId: 2, size: 'S' as const, toppings: [], quantity: 1 },
+        ],
+      };
+      await expect(orders.preview(fittingCart, user.id))
+        .resolves.toMatchObject({ inventory: { available: true, shortages: [] } });
+      const order = await orders.create(fittingCart, user.id);
+      expect((await dataSource.getRepository(IngredientEntity)
+        .findOneByOrFail({ id: sharedMilk.id })).stock).toBe(0);
+
+      await ingredients.replaceRecipe(1, [{
+        ingredientId: coffeeBeans.id,
+        quantityRequired: 1,
+      }]);
+      await orders.cancelForUser(order.id, user.id);
+      expect((await dataSource.getRepository(IngredientEntity)
+        .findOneByOrFail({ id: sharedMilk.id })).stock).toBe(300);
+      expect(await dataSource.getRepository(OrderIngredientConsumptionEntity).countBy({
+        orderId: order.id,
+      })).toBe(1);
+    } finally {
+      await Promise.all([1, 2].map((productId, index) =>
+        ingredients.replaceRecipe(productId, originalRecipes[index].map((line) => ({
+          ingredientId: line.ingredientId,
+          quantityRequired: line.quantityRequired,
+        }))),
+      ));
+    }
   });
 
   it('rejects invalid codes, excessive points, and points beyond the remaining payable total in preview', async () => {
@@ -254,17 +559,16 @@ describeWithDatabase('Task 10 PostgreSQL integration', () => {
       usageCount: 0,
     });
 
-    await dataSource.query(
-      'UPDATE "product_inventory" SET "stock" = 5, "version" = "version" + 1 WHERE "product_id" = 1',
-    );
+    const milk = await dataSource.getRepository(IngredientEntity)
+      .findOneByOrFail({ code: 'CONDENSED_MILK' });
     const first = await createUser();
     const second = await createUser();
     const order = await createOrder(first.id, code);
     await expect(createOrder(second.id, code)).rejects.toThrow('Mã khuyến mãi không hợp lệ');
     expect((await dataSource.getRepository(PromotionEntity).findOneByOrFail({ code })).usageCount)
       .toBe(1);
-    expect((await dataSource.getRepository(ProductInventoryEntity).findOneByOrFail({ productId: 1 })).stock)
-      .toBe(4);
+    expect((await dataSource.getRepository(IngredientEntity).findOneByOrFail({ id: milk.id })).stock)
+      .toBe(milk.stock - 120);
     expect(await dataSource.getRepository(OrderEntity).countBy({ userId: second.id })).toBe(0);
     expect(order.totalAmount).toBe(24000);
   });
@@ -324,17 +628,22 @@ describeWithDatabase('Task 10 PostgreSQL integration', () => {
 
   it('rejects invalid promotion codes and rolls back reserved inventory', async () => {
     const user = await createUser();
+    const before = await dataSource.getRepository(IngredientEntity)
+      .findOneByOrFail({ code: 'CONDENSED_MILK' });
     await expect(createOrder(user.id, 'NOTREAL'))
       .rejects.toThrow('Mã khuyến mãi không hợp lệ');
-    const inventory = await dataSource.getRepository(ProductInventoryEntity)
-      .findOneByOrFail({ productId: 1 });
-    expect(inventory.stock).toBe(1);
+    const ingredient = await dataSource.getRepository(IngredientEntity)
+      .findOneByOrFail({ id: before.id });
+    expect(ingredient.stock).toBe(before.stock);
     expect(await dataSource.getRepository(OrderEntity).countBy({ userId: user.id })).toBe(0);
   });
 
   it('allows only one concurrent order when stock is one', async () => {
     const first = await createUser();
     const second = await createUser();
+    const coffee = await dataSource.getRepository(IngredientEntity)
+      .findOneByOrFail({ code: 'COFFEE_BEANS' });
+    await dataSource.getRepository(IngredientEntity).update({ id: coffee.id }, { stock: 18 });
     const outcomes = await Promise.allSettled([
       createOrder(first.id),
       createOrder(second.id),
@@ -342,9 +651,9 @@ describeWithDatabase('Task 10 PostgreSQL integration', () => {
 
     expect(outcomes.filter((result) => result.status === 'fulfilled')).toHaveLength(1);
     expect(outcomes.filter((result) => result.status === 'rejected')).toHaveLength(1);
-    const inventory = await dataSource.getRepository(ProductInventoryEntity)
-      .findOneByOrFail({ productId: 1 });
-    expect(inventory.stock).toBe(0);
+    const ingredient = await dataSource.getRepository(IngredientEntity)
+      .findOneByOrFail({ id: coffee.id });
+    expect(ingredient.stock).toBe(0);
     const [{ count }] = await dataSource.query(
       'SELECT count(*)::integer AS count FROM "orders" WHERE "user_id" = ANY($1::uuid[])',
       [[first.id, second.id]],
@@ -354,14 +663,16 @@ describeWithDatabase('Task 10 PostgreSQL integration', () => {
 
   it('releases reserved stock once when an owner cancels an unpaid order', async () => {
     const user = await createUser();
+    const before = await dataSource.getRepository(IngredientEntity)
+      .findOneByOrFail({ code: 'COFFEE_BEANS' });
     const order = await createOrder(user.id);
     await orders.cancelForUser(order.id, user.id);
     await expect(orders.cancelForUser(order.id, user.id))
       .rejects.toBeInstanceOf(ConflictException);
 
-    const inventory = await dataSource.getRepository(ProductInventoryEntity)
-      .findOneByOrFail({ productId: 1 });
-    expect(inventory.stock).toBe(1);
+    const ingredient = await dataSource.getRepository(IngredientEntity)
+      .findOneByOrFail({ id: before.id });
+    expect(ingredient.stock).toBe(before.stock);
     expect((await dataSource.getRepository(OrderEntity).findOneByOrFail({
       id: order.id,
     })).status).toBe('CANCELLED');
@@ -372,7 +683,7 @@ describeWithDatabase('Task 10 PostgreSQL integration', () => {
     const coffeeBeans = await dataSource.getRepository(IngredientEntity)
       .findOneByOrFail({ code: 'COFFEE_BEANS' });
     const milk = await dataSource.getRepository(IngredientEntity)
-      .findOneByOrFail({ code: 'FRESH_MILK' });
+      .findOneByOrFail({ code: 'CONDENSED_MILK' });
     const order = await createOrder(user.id);
     expect((await dataSource.getRepository(IngredientEntity)
       .findOneByOrFail({ id: coffeeBeans.id })).stock).toBe(coffeeBeans.stock - 18);
@@ -401,9 +712,6 @@ describeWithDatabase('Task 10 PostgreSQL integration', () => {
   it('does not oversell an ingredient when two orders race', async () => {
     const first = await createUser();
     const second = await createUser();
-    await dataSource.query(
-      'UPDATE "product_inventory" SET "stock" = 100, "version" = "version" + 1 WHERE "product_id" = 1',
-    );
     const coffee = await dataSource.getRepository(IngredientEntity)
       .findOneByOrFail({ code: 'COFFEE_BEANS' });
     await dataSource.getRepository(IngredientEntity).update(
@@ -433,8 +741,6 @@ describeWithDatabase('Task 10 PostgreSQL integration', () => {
     try {
       await expect(createOrder(user.id)).rejects.toThrow('Chưa cấu hình công thức nguyên liệu');
       expect(await dataSource.getRepository(OrderEntity).countBy({ userId: user.id })).toBe(0);
-      expect((await dataSource.getRepository(ProductInventoryEntity)
-        .findOneByOrFail({ productId: 1 })).stock).toBe(1);
     } finally {
       await ingredients.replaceRecipe(1, savedRecipe.map((line) => ({
         ingredientId: line.ingredientId,
@@ -475,9 +781,6 @@ describeWithDatabase('Task 10 PostgreSQL integration', () => {
 
   it('keeps completed and cancelled orders available in their staff history filters', async () => {
     const user = await createUser();
-    await dataSource.query(
-      'UPDATE "product_inventory" SET "stock" = 10, "version" = "version" + 1 WHERE "product_id" = 1',
-    );
     const completed = await createOrder(user.id);
     await payments.pay(
       { orderId: completed.id, method: PaymentMethod.CARD },
