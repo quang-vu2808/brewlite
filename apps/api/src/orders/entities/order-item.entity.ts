@@ -11,7 +11,6 @@ export type OrderToppingSnapshot = {
   id: string;
   name: string;
   surcharge: number;
-  quantity?: number;
 };
 
 @Entity({ name: 'order_items' })

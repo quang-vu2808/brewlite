@@ -32,31 +32,25 @@ describe('OrdersService', () => {
     (work: (manager: EntityManager) => Promise<unknown>) =>
       work({ save } as unknown as EntityManager),
   );
-  const dataSource = { transaction, manager: {} } as unknown as DataSource;
+  const dataSource = { transaction } as unknown as DataSource;
   const productsService = new ProductsService();
+  const inventory = {
+    reserve: jest.fn().mockResolvedValue(undefined),
+    release: jest.fn().mockResolvedValue(undefined),
+  };
   const ingredients = {
-    checkOrderAvailability: jest.fn().mockResolvedValue({
-      available: true,
-      shortages: [],
-      unconfiguredProducts: [],
-    }),
-    reserveOrderItems: jest.fn().mockResolvedValue([]),
+    reserveForOrder: jest.fn().mockResolvedValue([]),
     saveOrderConsumption: jest.fn().mockResolvedValue(undefined),
     releaseOrderConsumption: jest.fn().mockResolvedValue(undefined),
   };
   const findOne = jest.spyOn(productsService, 'findOne');
-  const service = new OrdersService(dataSource, productsService, ingredients);
+  const service = new OrdersService(dataSource, productsService, inventory, ingredients);
 
   beforeEach(() => {
     save.mockClear();
     transaction.mockClear();
-    ingredients.checkOrderAvailability.mockClear();
-    ingredients.checkOrderAvailability.mockResolvedValue({
-      available: true,
-      shortages: [],
-      unconfiguredProducts: [],
-    });
-    ingredients.reserveOrderItems.mockClear();
+    inventory.reserve.mockClear();
+    ingredients.reserveForOrder.mockClear();
     ingredients.saveOrderConsumption.mockClear();
     findOne.mockReset();
     findOne.mockImplementation((id) => id === product.id ? product : undefined);
@@ -100,14 +94,10 @@ describe('OrdersService', () => {
       promotionUsageReleasedAt: null,
       userId: 'user-id',
     });
-    expect(ingredients.reserveOrderItems).toHaveBeenCalledWith(
+    expect(inventory.reserve).toHaveBeenCalledWith(expect.anything(), 1, 2);
+    expect(ingredients.reserveForOrder).toHaveBeenCalledWith(
       expect.anything(),
-      [{
-        productId: 1,
-        size: 'M',
-        quantity: 2,
-        toppings: [{ id: 'pearls', quantity: 1 }],
-      }],
+      new Map([[1, 2]]),
     );
     expect(ingredients.saveOrderConsumption).toHaveBeenCalledWith(
       expect.anything(),
@@ -118,7 +108,7 @@ describe('OrdersService', () => {
     expect(save.mock.calls[1][1]).toEqual([expect.objectContaining({
       productId: 1,
       size: 'M',
-      toppings: [{ id: 'pearls', name: 'Trân châu', surcharge: 5000, quantity: 1 }],
+      toppings: [{ id: 'pearls', name: 'Trân châu', surcharge: 5000 }],
       quantity: 2,
       unitPrice: 35000,
       lineTotal: 70000,
@@ -131,67 +121,6 @@ describe('OrdersService', () => {
       items: [{ productId: 999, size: 'S', quantity: 1, toppings: [] }],
     }, 'user-id')).rejects.toBeInstanceOf(NotFoundException);
     expect(transaction).not.toHaveBeenCalled();
-  });
-
-  it('charges and reserves each configured topping portion', async () => {
-    const result = await service.create({
-      items: [{
-        productId: 1,
-        size: 'M',
-        toppings: ['pearls'],
-        toppingQuantities: [{ id: 'pearls', quantity: 2 }],
-        quantity: 2,
-      }],
-    }, 'user-id');
-
-    expect(result.items[0]).toMatchObject({
-      unitPrice: 40000,
-      lineTotal: 80000,
-      toppings: [{ id: 'pearls', quantity: 2 }],
-    });
-    expect(ingredients.reserveOrderItems).toHaveBeenCalledWith(
-      expect.anything(),
-      [{
-        productId: 1,
-        size: 'M',
-        quantity: 2,
-        toppings: [{ id: 'pearls', quantity: 2 }],
-      }],
-    );
-  });
-
-  it('does not save an order if transactional inventory reservation fails', async () => {
-    ingredients.reserveOrderItems.mockRejectedValueOnce(new Error('inventory conflict'));
-    await expect(service.create({
-      items: [{ productId: 1, size: 'S', toppings: [], quantity: 1 }],
-    }, 'user-id')).rejects.toThrow('inventory conflict');
-    expect(save).not.toHaveBeenCalled();
-  });
-
-  it('previews shared ingredient availability for the combined product quantities', async () => {
-    findOne.mockImplementation((id) => id === 1
-      ? product
-      : id === 2
-        ? { id: 2, name: 'Bạc xỉu', price: 30000 }
-        : undefined);
-    await expect(service.preview({
-      items: [
-        { productId: 1, size: 'S', toppings: [], quantity: 2 },
-        { productId: 1, size: 'M', toppings: [], quantity: 2 },
-        { productId: 2, size: 'S', toppings: [], quantity: 1 },
-      ],
-    }, 'user-id')).resolves.toMatchObject({
-      inventory: { available: true, shortages: [], unconfiguredProducts: [] },
-    });
-
-    expect(ingredients.checkOrderAvailability).toHaveBeenCalledWith(
-      dataSource.manager,
-      [
-        { productId: 1, size: 'S', quantity: 2, toppings: [] },
-        { productId: 1, size: 'M', quantity: 2, toppings: [] },
-        { productId: 2, size: 'S', quantity: 1, toppings: [] },
-      ],
-    );
   });
 
   it('returns only the authenticated user orders and their latest payment', async () => {
@@ -217,6 +146,7 @@ describe('OrdersService', () => {
     const listService = new OrdersService(
       { manager: { find } } as unknown as DataSource,
       productsService,
+      inventory,
       ingredients,
     );
 
@@ -257,6 +187,7 @@ describe('OrdersService', () => {
     const detailService = new OrdersService(
       { manager: { findOne } } as unknown as DataSource,
       productsService,
+      inventory,
       ingredients,
     );
 

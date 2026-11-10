@@ -26,15 +26,6 @@ import { OrderIngredientConsumptionEntity } from './ingredients/entities/order-i
 import { IngredientsModule } from './ingredients/ingredients.module';
 import { IngredientAdjustmentEntity } from './ingredients/entities/ingredient-adjustment.entity';
 import { CreateIngredientInventory1710000005000 } from './database/migrations/1710000005000-CreateIngredientInventory';
-import { UseCondensedMilkForCoffee1710000006000 } from './database/migrations/1710000006000-UseCondensedMilkForCoffee';
-import { RecipesPackagingAndToppings1710000007000 } from './database/migrations/1710000007000-RecipesPackagingAndToppings';
-import { ProductSizeRecipeEntity, ProductSizeRecipeItemEntity, ProductPackagingRecipeEntity, ProductToppingRecipeEntity, ToppingEntity } from './ingredients/entities/product-size-recipe.entity';
-import { EnsureProductToppingRecipes1710000008000 } from './database/migrations/1710000008000-EnsureProductToppingRecipes';
-import { SharedToppingPortionQuantity1710000009000 } from './database/migrations/1710000009000-SharedToppingPortionQuantity';
-import { LinkExistingToppingsToIngredients1710000010000 } from './database/migrations/1710000010000-LinkExistingToppingsToIngredients';
-import { UseSharedToppingPortionInConstraint1710000011000 } from './database/migrations/1710000011000-UseSharedToppingPortionInConstraint';
-import { SeedPackagingCatalog1710000012000 } from './database/migrations/1710000012000-SeedPackagingCatalog';
-import { RequireConfirmedSizeRecipes1710000013000 } from './database/migrations/1710000013000-RequireConfirmedSizeRecipes';
 
 @Module({
   imports: [
@@ -72,11 +63,6 @@ import { RequireConfirmedSizeRecipes1710000013000 } from './database/migrations/
             IngredientRecipeEntity,
             OrderIngredientConsumptionEntity,
             IngredientAdjustmentEntity,
-            ProductSizeRecipeEntity,
-            ProductSizeRecipeItemEntity,
-            ProductPackagingRecipeEntity,
-            ProductToppingRecipeEntity,
-            ToppingEntity,
           ],
           migrations: [
             CreateOrders1710000000000,
@@ -85,14 +71,6 @@ import { RequireConfirmedSizeRecipes1710000013000 } from './database/migrations/
             Task10BusinessRules1710000003000,
             RedemptionAndPromotionRules1710000004000,
             CreateIngredientInventory1710000005000,
-            UseCondensedMilkForCoffee1710000006000,
-            RecipesPackagingAndToppings1710000007000,
-            EnsureProductToppingRecipes1710000008000,
-            SharedToppingPortionQuantity1710000009000,
-            LinkExistingToppingsToIngredients1710000010000,
-            UseSharedToppingPortionInConstraint1710000011000,
-            SeedPackagingCatalog1710000012000,
-            RequireConfirmedSizeRecipes1710000013000,
           ],
           migrationsRun: true,
           synchronize: false,

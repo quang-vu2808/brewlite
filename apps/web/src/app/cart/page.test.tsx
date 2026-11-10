@@ -9,7 +9,6 @@ import CartPage from "./page";
 const navigation = vi.hoisted(() => ({ push: vi.fn() }));
 vi.mock("next/navigation", () => ({
   useRouter: () => navigation,
-  usePathname: () => "/cart",
 }));
 
 function jsonResponse(payload: unknown, status = 200) {
@@ -51,13 +50,7 @@ describe("Cart pricing preview", () => {
         });
       }
       if (url.endsWith("/inventory")) {
-        return jsonResponse([{
-          productId: 1,
-          productName: "Cà phê sữa",
-          stock: 10,
-          available: true,
-          recipeConfigured: true,
-        }]);
+        return jsonResponse([{ productId: 1, productName: "Cà phê sữa", stock: 10, available: true }]);
       }
       if (url.endsWith("/orders/preview")) {
         const body = JSON.parse(String(init?.body)) as Record<string, unknown>;
@@ -78,7 +71,6 @@ describe("Cart pricing preview", () => {
           totalAmount,
           loyaltyPointsAvailable: 100,
           projectedLoyaltyPoints: Math.floor(totalAmount / 1000),
-          inventory: { available: true, shortages: [], unconfiguredProducts: [] },
         });
       }
       throw new Error(`Unexpected request: ${url}`);
@@ -133,105 +125,6 @@ describe("Cart pricing preview", () => {
 
     fireEvent.change(screen.getByLabelText("Mã khuyến mãi"), { target: { value: "BAD" } });
     fireEvent.click(screen.getByRole("button", { name: "Áp dụng mã" }));
-    expect(await screen.findByText("Mã khuyến mãi không hợp lệ")).toBeTruthy();
-  });
-
-  it("checks total shared ingredient demand and rechecks after the cart changes", async () => {
-    const previewBodies: Array<{ items: Array<{ productId: number; quantity: number }> }> = [];
-    const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
-      const url = String(input);
-      if (url.endsWith("/auth/me")) {
-        return jsonResponse({
-          id: "customer-id",
-          email: "customer@example.com",
-          loyaltyPoints: 0,
-          role: "CUSTOMER",
-        });
-      }
-      if (url.endsWith("/inventory")) {
-        return jsonResponse([{
-          productId: 1,
-          productName: "Cà phê sữa",
-          stock: 3,
-          available: true,
-          recipeConfigured: true,
-        }]);
-      }
-      if (url.endsWith("/orders/preview")) {
-        const body = JSON.parse(String(init?.body)) as {
-          items: Array<{ productId: number; quantity: number }>;
-        };
-        previewBodies.push(body);
-        const required = body.items.reduce((total, item) => total + item.quantity * 100, 0);
-        const available = required <= 300;
-        return jsonResponse({
-          subtotalAmount: required * 250,
-          discountAmount: 0,
-          redeemedPoints: 0,
-          loyaltyDiscountAmount: 0,
-          totalAmount: required * 250,
-          projectedLoyaltyPoints: 0,
-          inventory: {
-            available,
-            shortages: available ? [] : [{
-              ingredientId: "milk-id",
-              ingredientName: "Sữa",
-              unit: "ml",
-              required,
-              available: 300,
-            }],
-            unconfiguredProducts: [],
-          },
-        });
-      }
-      throw new Error(`Unexpected request: ${url}`);
-    });
-    vi.stubGlobal("fetch", fetchMock);
-    window.localStorage.setItem("brewlite-cart-v1", JSON.stringify([
-      {
-        key: '["1","S",[]]',
-        productId: "1",
-        name: "Cà phê sữa",
-        image: null,
-        basePrice: 25000,
-        size: "S",
-        sizeSurcharge: 0,
-        toppings: [],
-        unitPrice: 25000,
-        quantity: 2,
-      },
-      {
-        key: '["2","S",[]]',
-        productId: "2",
-        name: "Bạc xỉu",
-        image: null,
-        basePrice: 30000,
-        size: "S",
-        sizeSurcharge: 0,
-        toppings: [],
-        unitPrice: 30000,
-        quantity: 2,
-      },
-    ]));
-    render(
-      <CartProvider>
-        <AuthProvider>
-          <CheckoutProvider><CartHarness /></CheckoutProvider>
-        </AuthProvider>
-      </CartProvider>,
-    );
-
-    expect(await screen.findByText(/Thiếu nguyên liệu: Sữa \(cần 400 ml, còn 300 ml\)/))
-      .toBeTruthy();
-    const createOrderButton = screen.getByRole("button", { name: "Tạo đơn hàng" });
-    expect(createOrderButton.getAttribute("disabled")).not.toBeNull();
-    expect(previewBodies.some((body) => body.items.length === 2)).toBe(true);
-
-    fireEvent.click(screen.getByRole("button", { name: "Giảm số lượng Bạc xỉu" }));
-    await waitFor(() => expect(previewBodies.some((body) =>
-      body.items.reduce((total, item) => total + item.quantity, 0) === 3,
-    )).toBe(true));
-    await waitFor(() => expect(createOrderButton.getAttribute("disabled")).toBeNull());
-    expect(screen.getByText("Đủ nguyên liệu cho toàn bộ giỏ hàng.")).toBeTruthy();
+    expect((await screen.findByRole("alert")).textContent).toContain("Mã khuyến mãi không hợp lệ");
   });
 });

@@ -19,12 +19,6 @@ describe("calculateUnitPrice", () => {
     );
   });
 
-  it("charges each portion when the topping supports multiple portions", () => {
-    expect(calculateUnitPrice(25000, "S", [
-      { ...TOPPING_OPTIONS[0], quantity: 3 },
-    ])).toBe(40000);
-  });
-
   it("does not produce invalid totals for invalid base prices or topping surcharges", () => {
     const invalidTopping = {
       id: "invalid",

@@ -1,16 +1,12 @@
 "use client";
 
 import Link from "next/link";
-import { useParams, usePathname } from "next/navigation";
+import { useParams } from "next/navigation";
 import { useEffect, useState } from "react";
 import { SiteHeader } from "../../../components/site-header";
 import { useCart } from "../../../components/cart-provider";
-import { calculateUnitPrice, SIZE_OPTIONS, type ProductSize, type ProductTopping } from "../../../lib/pricing";
-import {
-  inventoryStatusMessage,
-  watchInventory,
-  type InventoryRecord,
-} from "../../../lib/inventory";
+import { calculateUnitPrice, SIZE_OPTIONS, TOPPING_OPTIONS, type ProductSize } from "../../../lib/pricing";
+import { fetchInventory } from "../../../lib/inventory";
 
 type Product = {
   id: number | string;
@@ -22,20 +18,6 @@ type Product = {
 };
 
 type LoadState = "loading" | "success" | "not-found" | "error";
-type InventoryLoad = {
-  productId: number;
-  retry: number;
-  record: InventoryRecord | null;
-  error: string | null;
-};
-type ToppingOption = ProductTopping & {
-  available: boolean;
-  configured: boolean;
-  maxPortions: number;
-  availablePortions: number;
-  portionQuantityRequired: number | null;
-  ingredientUnit: string | null;
-};
 
 const API_URL = (process.env.NEXT_PUBLIC_API_URL || "http://localhost:3001").replace(/\/$/, "");
 const formatter = new Intl.NumberFormat("vi-VN", {
@@ -69,18 +51,15 @@ function imageSrc(product: Product): string | null {
 
 export default function ProductDetailPage() {
   const { id } = useParams<{ id: string }>();
-  const pathname = usePathname();
   const { addItem, hydrated: cartHydrated } = useCart();
   const [product, setProduct] = useState<Product | null>(null);
   const [state, setState] = useState<LoadState>("loading");
   const [message, setMessage] = useState("");
   const [retry, setRetry] = useState(0);
   const [size, setSize] = useState<ProductSize>("M");
-  const [selectedToppings, setSelectedToppings] = useState<Record<string, number>>({});
-  const [inventoryLoad, setInventoryLoad] = useState<InventoryLoad | null>(null);
-  const [toppings, setToppings] = useState<ToppingOption[]>([]);
-  const [toppingsLoading, setToppingsLoading] = useState(true);
-  const [toppingsError, setToppingsError] = useState("");
+  const [selectedToppings, setSelectedToppings] = useState<Set<string>>(new Set());
+  const [stock, setStock] = useState<number | null>(null);
+  const [stockError, setStockError] = useState("");
 
   useEffect(() => {
     const abort = new AbortController();
@@ -89,8 +68,10 @@ export default function ProductDetailPage() {
       setProduct(null);
       setState("loading");
       setMessage("");
+      setStock(null);
+      setStockError("");
       setSize("M");
-      setSelectedToppings({});
+      setSelectedToppings(new Set());
 
       if (!/^[1-9]\d*$/.test(id)) {
         setState("not-found");
@@ -116,6 +97,15 @@ export default function ProductDetailPage() {
           setProduct({ ...payload, price: Number(payload.price) });
           setState("success");
         }
+        try {
+          const records = await fetchInventory(abort.signal);
+          const productStock = records.find((record) => record.productId === Number(payload.id));
+          if (!abort.signal.aborted) setStock(productStock?.stock ?? 0);
+        } catch (error) {
+          if (!abort.signal.aborted) {
+            setStockError(error instanceof Error ? error.message : "Không thể tải tồn kho");
+          }
+        }
       } catch (error) {
         if (!abort.signal.aborted) {
           setMessage(error instanceof Error ? error.message : "Không thể kết nối máy chủ");
@@ -128,97 +118,9 @@ export default function ProductDetailPage() {
     return () => abort.abort();
   }, [id, retry]);
 
-  useEffect(() => {
-    let active = true;
-    let controller: AbortController | null = null;
-    const refresh = async () => {
-      if (!/^[1-9]\d*$/.test(id)) return;
-      controller?.abort();
-      const request = new AbortController();
-      controller = request;
-      try {
-        const query = new URLSearchParams({ productId: id, size });
-        const response = await fetch(`${API_URL}/toppings?${query}`, {
-          cache: "no-store",
-          signal: request.signal,
-        });
-        if (!response.ok) throw new Error(`Topping trả HTTP ${response.status}`);
-        const payload: unknown = await response.json();
-        if (!Array.isArray(payload) || !payload.every((item) =>
-          typeof item === "object" && item !== null &&
-          typeof item.id === "string" && typeof item.name === "string" &&
-          Number.isSafeInteger(item.surcharge) && typeof item.available === "boolean" &&
-          typeof item.configured === "boolean" && Number.isSafeInteger(item.maxPortions) &&
-          Number.isSafeInteger(item.availablePortions) &&
-          (item.portionQuantityRequired === null || Number.isSafeInteger(item.portionQuantityRequired)) &&
-          (item.ingredientUnit === null || typeof item.ingredientUnit === "string"),
-        )) throw new Error("Dữ liệu topping không hợp lệ");
-        if (active && !request.signal.aborted) {
-          setToppings(payload as ToppingOption[]);
-          setToppingsError("");
-          setSelectedToppings((current) => Object.fromEntries(
-            Object.entries(current).filter(([selectedId, quantity]) =>
-              payload.some((item: ToppingOption) => item.id === selectedId && item.available && quantity <= item.availablePortions),
-            ),
-          ));
-        }
-      } catch (error) {
-        if (active && !request.signal.aborted) {
-          setToppingsError(error instanceof Error ? error.message : "Không thể tải topping");
-        }
-      } finally {
-        if (active) setToppingsLoading(false);
-      }
-    };
-    void refresh();
-    const timer = window.setInterval(() => {
-      if (document.visibilityState === "visible") void refresh();
-    }, 10000);
-    window.addEventListener("focus", refresh);
-    return () => {
-      active = false;
-      controller?.abort();
-      window.clearInterval(timer);
-      window.removeEventListener("focus", refresh);
-    };
-  }, [id, size]);
-
-  useEffect(() => {
-    if (!/^[1-9]\d*$/.test(id)) return;
-    const productId = Number(id);
-    return watchInventory((records) => {
-      setInventoryLoad({
-        productId,
-        retry,
-        record: records.find((record) => record.productId === productId) ?? null,
-        error: null,
-      });
-    }, (error) => {
-      setInventoryLoad({
-        productId,
-        retry,
-        record: null,
-        error: error instanceof Error ? error.message : "Không thể tải tồn kho",
-      });
-    });
-  }, [id, retry, pathname]);
-
-  const currentInventoryLoad = inventoryLoad?.productId === Number(id) &&
-      inventoryLoad.retry === retry
-    ? inventoryLoad
-    : null;
-  const stock = currentInventoryLoad?.record ?? null;
-  const inventoryLoaded = currentInventoryLoad !== null && currentInventoryLoad.error === null;
-  const stockError = currentInventoryLoad?.error ?? "";
-
   const selectedSize = SIZE_OPTIONS.find((option) => option.name === size);
-  const selectedSizeAvailability = stock?.sizes
-    ? stock.sizes.find((item) => item.size === size)
-    : stock;
   const basePrice = product ? Number(product.price) : 0;
-  const selectedToppingOptions = toppings
-    .filter((topping) => (selectedToppings[topping.id] ?? 0) > 0)
-    .map((topping) => ({ ...topping, quantity: selectedToppings[topping.id] }));
+  const selectedToppingOptions = TOPPING_OPTIONS.filter((topping) => selectedToppings.has(topping.id));
   const total = product ? calculateUnitPrice(basePrice, size, selectedToppingOptions) : 0;
   const image = product ? imageSrc(product) : null;
 
@@ -273,7 +175,7 @@ export default function ProductDetailPage() {
               {product.description && <p className="detail-description">{product.description}</p>}
               <p className="detail-base-price">Giá cơ bản <strong>{formatter.format(basePrice)}</strong></p>
               <p className="detail-stock" role={stockError ? "alert" : undefined}>
-                {inventoryStatusMessage(stock, !inventoryLoaded, stockError, size)}
+                {stockError || (stock === null ? "Đang tải tồn kho..." : stock > 0 ? `Còn ${stock} sản phẩm` : "Tạm hết hàng")}
               </p>
 
               <fieldset className="option-group">
@@ -291,7 +193,7 @@ export default function ProductDetailPage() {
                         checked={size === option.name}
                         onChange={() => setSize(option.name)}
                       />
-                      <span className="size-option-name">Size {option.name}</span>
+                      <span>{option.name}</span>
                       <small>{option.surcharge === 0 ? "Không phụ thu" : `+${formatter.format(option.surcharge)}`}</small>
                     </label>
                   ))}
@@ -301,54 +203,33 @@ export default function ProductDetailPage() {
               <fieldset className="option-group">
                 <legend>Thêm topping</legend>
                 <div className="topping-list">
-                  {toppings.map((topping) => {
-                    const quantity = selectedToppings[topping.id] ?? 0;
+                  {TOPPING_OPTIONS.map((topping) => {
+                    const checked = selectedToppings.has(topping.id);
                     return (
-                      <article
-                        className={`topping-option${!topping.available ? " unavailable" : ""}`}
+                      <label
+                        className={`option-button topping-option${checked ? " selected" : ""}`}
                         key={topping.id}
                       >
-                        <div className="topping-info">
-                          <strong>{topping.name}</strong>
-                          <span className="topping-price">+{formatter.format(topping.surcharge)}/phần</span>
-                          <small>
-                            {topping.configured && topping.portionQuantityRequired
-                              ? `${topping.portionQuantityRequired} ${topping.ingredientUnit ?? ""}/phần`
-                              : "Chưa cấu hình định lượng"}
-                          </small>
-                          <span className={`topping-stock${topping.available ? "" : " is-unavailable"}`}>
-                            {!topping.configured
-                              ? "Chưa cấu hình"
-                              : topping.available
-                                ? `Còn ${topping.availablePortions.toLocaleString("vi-VN")} phần`
-                                : "Hết hàng"}
-                          </span>
-                        </div>
-                        <div className="topping-quantity" aria-label={`Số phần ${topping.name}`}>
-                          <button type="button" disabled={!topping.available || quantity <= 0} onClick={(event) => {
-                            event.stopPropagation();
-                            setSelectedToppings((current) => {
-                              const next = { ...current };
-                              if (quantity <= 1) delete next[topping.id];
-                              else next[topping.id] = quantity - 1;
-                              return next;
-                            });
-                          }} aria-label={`Giảm phần ${topping.name}`}>−</button>
-                          <output aria-live="polite">{quantity}</output>
-                          <button type="button" disabled={!topping.available || quantity >= topping.availablePortions} onClick={(event) => {
-                            event.stopPropagation();
-                            setSelectedToppings((current) => ({ ...current, [topping.id]: quantity + 1 }));
-                          }} aria-label={`Tăng phần ${topping.name}`}>+</button>
-                        </div>
-                      </article>
+                        <input
+                          type="checkbox"
+                          checked={checked}
+                          onChange={() => setSelectedToppings((current) => {
+                            const next = new Set(current);
+                            if (next.has(topping.id)) next.delete(topping.id);
+                            else next.add(topping.id);
+                            return next;
+                          })}
+                        />
+                        <span className="topping-check" aria-hidden="true">{checked ? "✓" : "+"}</span>
+                        <span>{topping.name}</span>
+                        <small>+{formatter.format(topping.surcharge)}</small>
+                      </label>
                     );
                   })}
-                  {!toppingsLoading && !toppingsError && toppings.length === 0 && <p>Hiện chưa có topping.</p>}
-                  {toppingsLoading && <p role="status">Đang tải topping...</p>}
-                  {toppingsError && <p role="alert">Không tải được topping: {toppingsError}</p>}
                 </div>
               </fieldset>
 
+              <p className="pricing-assumption">Phụ thu size và topping là giá mẫu, có thể điều chỉnh theo bảng giá thực tế.</p>
               <div className="detail-total" aria-live="polite">
                 <span>Tổng giá</span>
                 <strong>{formatter.format(total)}</strong>
@@ -356,8 +237,7 @@ export default function ProductDetailPage() {
               <button
                 className="detail-action add-to-cart"
                 type="button"
-                disabled={!cartHydrated || !inventoryLoaded || !selectedSizeAvailability?.recipeConfigured ||
-                  !selectedSizeAvailability.available || (Boolean(toppingsError) && Object.keys(selectedToppings).length > 0)}
+                disabled={!cartHydrated || stock === null || stock <= 0}
                 onClick={() => {
                   if (!product) return;
                   addItem({

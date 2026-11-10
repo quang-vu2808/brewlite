@@ -1,13 +1,13 @@
 "use client";
 
 import Link from "next/link";
-import { usePathname, useRouter } from "next/navigation";
-import { useLayoutEffect, useRef, useState } from "react";
+import { useRouter } from "next/navigation";
+import { useState } from "react";
 import { SiteHeader } from "../../components/site-header";
 import { useCart } from "../../components/cart-provider";
 import { useAuth } from "../../components/auth-provider";
 import { parseCheckoutOrder, useCheckout } from "../../components/checkout-provider";
-import { fetchInventory, watchInventory } from "../../lib/inventory";
+import { fetchInventory, type InventoryRecord } from "../../lib/inventory";
 import { useEffect } from "react";
 
 const API_URL = (process.env.NEXT_PUBLIC_API_URL || "http://localhost:3001").replace(/\/$/, "");
@@ -17,55 +17,9 @@ const formatter = new Intl.NumberFormat("vi-VN", {
   maximumFractionDigits: 0,
 });
 
-type InventoryCheck = {
-  available: boolean;
-  shortages: Array<{
-    ingredientId: string;
-    ingredientName: string;
-    unit: string;
-    required: number;
-    available: number;
-  }>;
-  unconfiguredProducts: number[];
-  unconfiguredSizes?: Array<{ productId: number; size: "S" | "M" | "L" }>;
-  unconfiguredToppings?: string[];
-  unconfiguredPackaging?: string[];
-};
-
-function isInventoryCheck(value: unknown): value is InventoryCheck {
-  if (typeof value !== "object" || value === null) return false;
-  const check = value as Record<string, unknown>;
-  return typeof check.available === "boolean" &&
-    Array.isArray(check.unconfiguredProducts) &&
-    check.unconfiguredProducts.every((id) => Number.isSafeInteger(id)) &&
-    (check.unconfiguredSizes === undefined ||
-      (Array.isArray(check.unconfiguredSizes) && check.unconfiguredSizes.every((entry: unknown) =>
-        typeof entry === "object" && entry !== null &&
-        Number.isSafeInteger((entry as { productId?: unknown }).productId) &&
-        ["S", "M", "L"].includes(String((entry as { size?: unknown }).size)),
-      ))) &&
-    (check.unconfiguredToppings === undefined ||
-      (Array.isArray(check.unconfiguredToppings) && check.unconfiguredToppings.every((id) => typeof id === "string"))) &&
-    (check.unconfiguredPackaging === undefined ||
-      (Array.isArray(check.unconfiguredPackaging) && check.unconfiguredPackaging.every((id) => typeof id === "string"))) &&
-    Array.isArray(check.shortages) &&
-    check.shortages.every((shortage: unknown) => {
-      if (typeof shortage !== "object" || shortage === null) return false;
-      const item = shortage as Record<string, unknown>;
-      return typeof item.ingredientId === "string" &&
-        typeof item.ingredientName === "string" &&
-        typeof item.unit === "string" &&
-        Number.isSafeInteger(item.required) &&
-        Number(item.required) >= 0 &&
-        Number.isSafeInteger(item.available) &&
-        Number(item.available) >= 0;
-    });
-}
-
 export default function CartPage() {
   const router = useRouter();
-  const pathname = usePathname();
-  const { items, hydrated, totalItems, totalPrice, increaseQuantity, decreaseQuantity, removeTopping, removeItem } = useCart();
+  const { items, hydrated, totalItems, totalPrice, increaseQuantity, decreaseQuantity, removeItem } = useCart();
   const { token, user, logout, updateUser } = useAuth();
   const { setOrder } = useCheckout();
   const [submitting, setSubmitting] = useState(false);
@@ -82,29 +36,25 @@ export default function CartPage() {
     loyaltyDiscountAmount: number;
     totalAmount: number;
     projectedLoyaltyPoints: number;
-    inventory: InventoryCheck;
   } | null>(null);
   const [previewLoading, setPreviewLoading] = useState(false);
   const [previewError, setPreviewError] = useState("");
+  const [inventory, setInventory] = useState<Map<number, InventoryRecord>>(new Map());
   const [inventoryError, setInventoryError] = useState("");
-  const [inventoryCheck, setInventoryCheck] = useState<{
-    items: typeof items;
-    result: InventoryCheck;
-  } | null>(null);
-  const [availabilityRetry, setAvailabilityRetry] = useState(0);
-  const itemsRef = useRef(items);
-  useLayoutEffect(() => {
-    itemsRef.current = items;
-  }, [items]);
 
   useEffect(() => {
-    return watchInventory(() => {
+    const controller = new AbortController();
+    void fetchInventory(controller.signal).then((records) => {
+      if (controller.signal.aborted) return;
+      setInventory(new Map(records.map((record) => [record.productId, record])));
       setInventoryError("");
-      setAvailabilityRetry((value) => value + 1);
-    }, (error) => {
-      setInventoryError(error instanceof Error ? error.message : "Không thể tải tồn kho");
+    }).catch((error: unknown) => {
+      if (!controller.signal.aborted) {
+        setInventoryError(error instanceof Error ? error.message : "Không thể tải tồn kho");
+      }
     });
-  }, [pathname]);
+    return () => controller.abort();
+  }, []);
 
   useEffect(() => {
     if (!hydrated || !token || items.length === 0) {
@@ -112,11 +62,9 @@ export default function CartPage() {
         setPreview(null);
         setPreviewError("");
         setPreviewLoading(false);
-        setInventoryCheck(null);
       }, 0);
       return () => window.clearTimeout(resetTimer);
     }
-    const requestItems = items;
     const controller = new AbortController();
     const timer = window.setTimeout(() => {
       setPreviewLoading(true);
@@ -132,10 +80,6 @@ export default function CartPage() {
             productId: Number(item.productId),
             size: item.size,
             toppings: item.toppings.map((topping) => topping.id),
-            toppingQuantities: item.toppings.map((topping) => ({
-              id: topping.id,
-              quantity: topping.quantity ?? 1,
-            })),
             quantity: item.quantity,
           })),
           ...(appliedPromoCode ? { promoCode: appliedPromoCode } : {}),
@@ -155,13 +99,8 @@ export default function CartPage() {
         if (typeof payload !== "object" || payload === null ||
             !("subtotalAmount" in payload) || !("discountAmount" in payload) ||
             !("redeemedPoints" in payload) || !("loyaltyDiscountAmount" in payload) ||
-            !("totalAmount" in payload) || !("projectedLoyaltyPoints" in payload) ||
-            !("inventory" in payload)) {
+            !("totalAmount" in payload) || !("projectedLoyaltyPoints" in payload)) {
           throw new Error("Dữ liệu xem trước giá không hợp lệ.");
-        }
-        const inventoryResult = payload.inventory;
-        if (!isInventoryCheck(inventoryResult)) {
-          throw new Error("Dữ liệu kiểm tra tồn kho không hợp lệ.");
         }
         const values = [
           payload.subtotalAmount,
@@ -174,13 +113,10 @@ export default function CartPage() {
         if (values.some((value) => typeof value !== "number" || !Number.isSafeInteger(value) || value < 0)) {
           throw new Error("Số tiền xem trước không hợp lệ.");
         }
-        if (controller.signal.aborted || itemsRef.current !== requestItems) return;
         setPreview(payload as typeof preview);
-        setInventoryCheck({ items: requestItems, result: inventoryResult });
       }).catch((error: unknown) => {
-        if (!controller.signal.aborted && itemsRef.current === requestItems) {
+        if (!controller.signal.aborted) {
           setPreview(null);
-          setInventoryCheck(null);
           setPreviewError(error instanceof Error ? error.message : "Không thể xem trước giá.");
         }
       }).finally(() => {
@@ -191,30 +127,20 @@ export default function CartPage() {
       window.clearTimeout(timer);
       controller.abort();
     };
-  }, [hydrated, token, items, appliedPromoCode, appliedRedeemPoints, logout, availabilityRetry]);
+  }, [hydrated, token, items, appliedPromoCode, appliedRedeemPoints, logout]);
 
-  const currentInventoryCheck = inventoryCheck?.items === items
-    ? inventoryCheck.result
-    : null;
-  const stockShortages = currentInventoryCheck?.shortages ?? [];
-  const unconfiguredProducts = currentInventoryCheck?.unconfiguredProducts ?? [];
-  const unconfiguredSizes = currentInventoryCheck?.unconfiguredSizes ?? [];
-  const unconfiguredToppings = currentInventoryCheck?.unconfiguredToppings ?? [];
-  const unconfiguredPackaging = currentInventoryCheck?.unconfiguredPackaging ?? [];
-
-  async function refreshInventory() {
-    try {
-      await fetchInventory();
-      setInventoryError("");
-    } catch (error) {
-      setInventoryError(error instanceof Error ? error.message : "Không thể tải tồn kho");
-    }
-    setAvailabilityRetry((value) => value + 1);
-  }
+  const stockShortages = items.reduce((shortages, item) => {
+    const productId = Number(item.productId);
+    const available = inventory.get(productId)?.stock;
+    const ordered = items.filter((line) => Number(line.productId) === productId)
+      .reduce((sum, line) => sum + line.quantity, 0);
+    if (available === undefined || ordered > available) shortages.push(item.name);
+    return shortages;
+  }, [] as string[]);
 
   async function createOrder() {
-    if (submitting || items.length === 0 || !token || !currentInventoryCheck?.available ||
-        previewError ||
+    if (submitting || items.length === 0 || !token ||
+        (previewError && (appliedPromoCode || appliedRedeemPoints > 0)) ||
         (appliedPromoCode !== "" && preview?.discountAmount === 0) ||
         (appliedRedeemPoints > 0 && preview?.redeemedPoints !== appliedRedeemPoints)) return;
     setSubmitting(true);
@@ -233,10 +159,6 @@ export default function CartPage() {
             productId: Number(item.productId),
             size: item.size,
             toppings: item.toppings.map((topping) => topping.id),
-            toppingQuantities: item.toppings.map((topping) => ({
-              id: topping.id,
-              quantity: topping.quantity ?? 1,
-            })),
             quantity: item.quantity,
           })),
           ...(appliedPromoCode ? { promoCode: appliedPromoCode } : {}),
@@ -255,10 +177,6 @@ export default function CartPage() {
           "message" in detail && typeof detail.message === "string"
           ? detail.message
           : `API trả HTTP ${response.status}`;
-        if (response.status === 409 || /nguyên liệu|công thức/i.test(message)) {
-          setInventoryCheck(null);
-          void refreshInventory();
-        }
         throw new Error(message);
       }
 
@@ -276,45 +194,6 @@ export default function CartPage() {
     } finally {
       setSubmitting(false);
     }
-  }
-
-  let inventoryNotice: string;
-  let inventoryNoticeIsError = false;
-  if (!token) {
-    inventoryNotice = "Đăng nhập để kiểm tra tồn kho của toàn bộ giỏ hàng.";
-  } else if (currentInventoryCheck) {
-    if (unconfiguredProducts.length > 0) {
-      const names = items
-        .filter((item) => unconfiguredProducts.includes(Number(item.productId)))
-        .map((item) => item.name);
-      inventoryNotice = `Chưa có công thức nguyên liệu cho: ${[...new Set(names)].join(", ")}`;
-      inventoryNoticeIsError = true;
-    } else if (unconfiguredSizes.length > 0) {
-      inventoryNotice = `Chưa cấu hình công thức theo size: ${unconfiguredSizes.map(({ productId, size }) =>
-        `${items.find((item) => Number(item.productId) === productId)?.name ?? `Sản phẩm ${productId}`} size ${size}`,
-      ).join(", ")}`;
-      inventoryNoticeIsError = true;
-    } else if (unconfiguredToppings.length > 0) {
-      inventoryNotice = "Topping đã chọn chưa được cấu hình tồn kho. Hãy bỏ topping hoặc chọn món khác.";
-      inventoryNoticeIsError = true;
-    } else if (unconfiguredPackaging.length > 0) {
-      inventoryNotice = "Ly theo size chưa sẵn sàng hoặc vật tư đóng gói không tương thích hay đã ngừng sử dụng.";
-      inventoryNoticeIsError = true;
-    } else if (stockShortages.length > 0) {
-      inventoryNotice = `Thiếu nguyên liệu: ${stockShortages.map((shortage) =>
-        `${shortage.ingredientName} (cần ${shortage.required} ${shortage.unit}, còn ${shortage.available} ${shortage.unit})`,
-      ).join(", ")}`;
-      inventoryNoticeIsError = true;
-    } else {
-      inventoryNotice = "Đủ nguyên liệu cho toàn bộ giỏ hàng.";
-    }
-  } else if (inventoryError) {
-    inventoryNotice = `Không tải được tồn kho: ${inventoryError}`;
-    inventoryNoticeIsError = true;
-  } else if (previewError) {
-    inventoryNotice = "Chưa thể xác nhận tồn kho do báo giá gặp lỗi.";
-  } else {
-    inventoryNotice = "Đang kiểm tra nhu cầu nguyên liệu...";
   }
 
   return (
@@ -353,15 +232,7 @@ export default function CartPage() {
                     <div className="cart-item-title">
                       <div>
                         <Link href={`/products/${encodeURIComponent(item.productId)}`}><h2>{item.name}</h2></Link>
-                        <p>Size {item.size}</p>
-                        {item.toppings.length > 0 && <div className="cart-topping-list">
-                          {item.toppings.map((topping) => (
-                            <span key={topping.id}>
-                              {topping.name}{(topping.quantity ?? 1) > 1 ? ` x${topping.quantity}` : ""}
-                              <button type="button" onClick={() => removeTopping(item.key, topping.id)} aria-label={`Bỏ topping ${topping.name} khỏi ${item.name}`}>Bỏ</button>
-                            </span>
-                          ))}
-                        </div>}
+                        <p>Size {item.size}{item.toppings.length > 0 ? ` · ${item.toppings.map((topping) => topping.name).join(", ")}` : ""}</p>
                       </div>
                       <button className="remove-cart-item" type="button" onClick={() => removeItem(item.key)} aria-label={`Xóa ${item.name}, size ${item.size}`}>
                         Xóa
@@ -455,8 +326,10 @@ export default function CartPage() {
                   Dùng tối đa
                 </button>
               </div>
-              <div className="cart-stock-notice" role={inventoryNoticeIsError ? "alert" : "status"}>
-                {inventoryNotice}
+              <div className="cart-stock-notice" role={inventoryError || stockShortages.length > 0 ? "alert" : "status"}>
+                {inventoryError || (stockShortages.length > 0
+                  ? `Tồn kho chưa đủ cho: ${[...new Set(stockShortages)].join(", ")}`
+                  : "Tồn kho đã được kiểm tra")}
               </div>
               <div className="cart-price-breakdown" aria-live="polite">
                 <p><span>Tạm tính</span><strong>{formatter.format(preview?.subtotalAmount ?? totalPrice)}</strong></p>
@@ -476,7 +349,7 @@ export default function CartPage() {
                   <Link className="detail-action create-order-button" href="/login?returnTo=%2Fcart">Đăng nhập để đặt đơn</Link>
                 </div>
               ) : (
-                <button className="detail-action create-order-button" type="button" onClick={createOrder} disabled={submitting || !hydrated || !currentInventoryCheck?.available || previewLoading || !!previewError || (appliedPromoCode && !preview?.discountAmount) || (appliedRedeemPoints > 0 && preview?.redeemedPoints !== appliedRedeemPoints)}>
+                <button className="detail-action create-order-button" type="button" onClick={createOrder} disabled={submitting || !hydrated || !!inventoryError || stockShortages.length > 0 || previewLoading || !!previewError || (appliedPromoCode && !preview?.discountAmount) || (appliedRedeemPoints > 0 && preview?.redeemedPoints !== appliedRedeemPoints)}>
                   {submitting ? "Đang tạo đơn..." : "Tạo đơn hàng"}
                 </button>
               )}

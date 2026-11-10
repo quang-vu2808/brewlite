@@ -20,18 +20,6 @@ export class IngredientEntity {
   @Column({ name: 'warning_threshold', type: 'integer', default: 0 })
   warningThreshold!: number;
 
-  @Column({ type: 'varchar', length: 16, default: 'INGREDIENT' })
-  kind!: 'INGREDIENT' | 'PACKAGING';
-
-  @Column({ type: 'varchar', length: 40, nullable: true })
-  category!: string | null;
-
-  @Column({ name: 'is_active', type: 'boolean', default: true })
-  isActive!: boolean;
-
-  @Column({ name: 'compatible_sizes', type: 'varchar', array: true, length: 1, default: () => "ARRAY[]::varchar(1)[]" })
-  compatibleSizes!: Array<'S' | 'M' | 'L'>;
-
   @Column({ type: 'integer', default: 1 })
   version!: number;
 

@@ -17,17 +17,6 @@ import {
 export const ORDER_SIZES = ['S', 'M', 'L'] as const;
 export const ORDER_TOPPINGS = ['pearls', 'cheese-foam', 'espresso'] as const;
 
-class ToppingQuantityDto {
-  @IsIn([...ORDER_TOPPINGS])
-  id!: (typeof ORDER_TOPPINGS)[number];
-
-  @Type(() => Number)
-  @IsInt()
-  @Min(1)
-  @Max(2_147_483_647)
-  quantity!: number;
-}
-
 export class CreateOrderItemDto {
   @Type(() => Number)
   @IsInt()
@@ -43,14 +32,6 @@ export class CreateOrderItemDto {
   @ArrayUnique()
   @IsIn([...ORDER_TOPPINGS], { each: true })
   toppings: string[] = [];
-
-  @IsOptional()
-  @IsArray()
-  @ArrayMaxSize(3)
-  @ArrayUnique((item: ToppingQuantityDto) => item.id)
-  @Type(() => ToppingQuantityDto)
-  @ValidateNested({ each: true })
-  toppingQuantities?: ToppingQuantityDto[];
 
   @Type(() => Number)
   @IsInt()
