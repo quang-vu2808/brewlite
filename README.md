@@ -35,35 +35,30 @@ BrewLite giúp khách hàng xem menu đồ uống, tùy chỉnh món theo size v
 ## 3. Cấu trúc thư mục
 
 ```text
-.
-├── .github/workflows/       # GitHub Actions CI
-├── apps/
-│   ├── api/
-│   │   ├── Dockerfile
-│   │   ├── src/
-│   │   │   ├── auth/        # Đăng ký, đăng nhập, JWT guard
-│   │   │   ├── database/    # Migration TypeORM
-│   │   │   ├── orders/      # Đơn hàng, state machine, tồn kho sản phẩm và staff queue
-│   │   │   ├── ingredients/ # Nguyên liệu, điều chỉnh kho, công thức và tiêu hao theo đơn
-│   │   │   ├── payments/    # Provider mock, QR demo và idempotency
-│   │   │   ├── promotions/  # Khuyến mãi, lịch hiệu lực và giới hạn lượt dùng
-│   │   │   ├── products/    # API sản phẩm và catalog mẫu
-│   │   │   └── users/       # User entity, điểm thưởng và vai trò
-│   │   └── test/            # Kiểm thử API
-│   └── web/
-│       ├── Dockerfile
-│       ├── public/          # Tài nguyên tĩnh
-│       └── src/
-│           ├── app/         # Menu, giỏ hàng, checkout, đăng nhập Staff và trang staff
-│           ├── components/  # Header, providers, toast, đơn hàng và quản lý nguyên liệu
-│           └── lib/         # Logic giá, tồn kho và kiểm thử
-├── docs/
-│   ├── architecture/
-│   ├── diagrams/
-│   └── requirements/
-├── docker-compose.yml       # PostgreSQL, API và Web
+brewlite/
+├── backend/                    # NestJS API
+│   ├── Dockerfile
+│   ├── src/
+│   │   ├── auth/              # Xác thực và JWT
+│   │   ├── database/          # Migration TypeORM
+│   │   ├── orders/            # Đơn hàng và tồn kho
+│   │   ├── ingredients/       # Nguyên liệu, topping và công thức
+│   │   ├── payments/          # Thanh toán mô phỏng
+│   │   ├── promotions/        # Khuyến mãi
+│   │   ├── products/          # Danh mục sản phẩm
+│   │   └── users/             # Tài khoản và vai trò
+│   └── test/                  # Kiểm thử API và integration
+├── frontend/                   # Next.js
+│   ├── Dockerfile
+│   ├── public/
+│   └── src/
+│       ├── app/               # Trang khách hàng và nhân viên
+│       ├── components/        # Giao diện và providers
+│       └── lib/               # Logic dùng chung
+├── docs/                       # Kiến trúc, sơ đồ và yêu cầu
+├── docker-compose.yml          # PostgreSQL, API và Web
 ├── .dockerignore
-├── .env.example             # Mẫu biến môi trường
+├── .env.example
 └── README.md
 ```
 
@@ -74,16 +69,27 @@ Docker Compose có thể chạy toàn bộ PostgreSQL, API và Web; cũng có th
 Trạng thái dưới đây dựa trên mã nguồn hiện tại và các kiểm tra đã thực hiện; không đồng nghĩa với triển khai production.
 
 | Task | Nội dung | Trạng thái và ghi chú |
+
 |---|---|---|
-| 1 | Khởi tạo dự án | Đã có cấu trúc Web/API, tài liệu dự án và CI. |
+
+| 1 | Khởi tạo dự án | Đã có cấu trúc Frontend/Backend và tài liệu dự án. |
+
 | 2 | API sản phẩm | Đã có danh sách và chi tiết sản phẩm; catalog hiện là dữ liệu mẫu trong bộ nhớ. |
+
 | 3 | Trang Menu | Đã có trang Menu tải dữ liệu từ API, trạng thái loading/lỗi và liên kết đến chi tiết. |
+
 | 4 | Chi tiết sản phẩm | Đã có chọn size S/M/L, topping và tính giá theo phụ thu mẫu. |
+
 | 5 | Giỏ hàng | Đã có React Context, khôi phục từ `localStorage`, thay đổi số lượng, xóa món, tính tổng, badge Header và thông báo thêm món. |
+
 | 6 | API tạo đơn | Đã có `POST /orders`, validation, tính lại giá ở backend, lưu Order/OrderItem bằng transaction và trạng thái `PENDING`. |
+
 | 7 | Tài khoản và xác thực | Đã có đăng ký/đăng nhập, bcrypt, JWT, bảo vệ API và cấp `CUSTOMER` mặc định; STAFF sau đăng nhập vào `/staff`, vai trò được xác minh lại từ Backend. |
+
 | 8 | Thanh toán mock | Đã có lựa chọn Ví/Thẻ mô phỏng, API có JWT, lưu Payment và cập nhật trạng thái đơn trong transaction; xem kết quả kiểm thử tại mục 9. |
+
 | 9 | Xác nhận, lịch sử đơn và bàn giao | Đã có API lịch sử/chi tiết theo chủ đơn, giao diện lịch sử/chi tiết và Docker Compose chạy Web/API/PostgreSQL; đã smoke-test API/UI. Quy trình bàn giao hoặc xác nhận nhận hàng chưa triển khai. |
+
 | 10 | Nghiệp vụ Backend nâng cao | Đã có state machine, thanh toán idempotent, tồn kho versioned, quản trị khuyến mãi cho STAFF, cộng/đổi điểm và UI staff/customer; kết quả kiểm thử ở mục 9. |
 
 Size/topping và catalog hiện dùng dữ liệu, quy tắc giá mẫu; cần đồng bộ và thay bằng nguồn dữ liệu nghiệp vụ thực trước khi vận hành thực tế.
@@ -112,48 +118,91 @@ Size/topping và catalog hiện dùng dữ liệu, quy tắc giá mẫu; cần �
 ### Bảng file của đợt nâng cấp sau Task 10
 
 | Đường dẫn | Thay đổi | Tác dụng |
+
 |---|---|---|
+
 | `backend/src/app.module.ts` | Chỉnh sửa | Đăng ký entity, migration và module nguyên liệu với TypeORM/NestJS. |
+
 | `backend/src/database/migrations/1710000005000-CreateIngredientInventory.ts` | Tạo mới | Tạo bảng nguyên liệu, recipe, tiêu hao theo đơn và audit điều chỉnh; thêm dữ liệu mẫu ban đầu. |
+
 | `backend/src/database/migrations/1710000007000-RecipesPackagingAndToppings.ts` | Tạo mới | Mở rộng kho dùng chung, công thức size, vật tư và danh mục topping, không seed định lượng/tồn mới. |
+
 | `backend/src/database/migrations/1710000008000-EnsureProductToppingRecipes.ts` | Tạo mới | Khôi phục an toàn bảng công thức topping nếu migration trước đã được ghi nhận nhưng thiếu bảng. |
+
 | `backend/src/database/migrations/1710000009000-SharedToppingPortionQuantity.ts` | Tạo mới | Lưu định lượng mỗi phần topping trong danh mục topping. |
+
 | `backend/src/database/migrations/1710000010000-LinkExistingToppingsToIngredients.ts` | Tạo mới | Tái sử dụng hoặc thêm kho nguyên liệu topping với tồn 0, rồi liên kết catalog hiện có mà không đổi giá/định lượng. |
+
 | `backend/src/database/migrations/1710000011000-UseSharedToppingPortionInConstraint.ts` | Tạo mới | Sửa điều kiện bật bán topping để phù hợp với định lượng chung hiện hành. |
+
 | `backend/src/ingredients/ingredients.module.ts` | Tạo mới | Khai báo module quản lý nguyên liệu và các entity liên quan. |
+
 | `backend/src/ingredients/ingredients.controller.ts` | Tạo mới | Cung cấp API kho, cập nhật thông tin, audit và công thức; bảo vệ bằng JWT/StaffGuard. |
+
 | `backend/src/ingredients/toppings.controller.ts` | Tạo mới | Tạo/cập nhật danh mục topping và cung cấp topping khả dụng cho khách; staff routes được bảo vệ. |
+
 | `backend/src/ingredients/ingredients.service.ts` | Tạo mới | Xử lý tồn/công thức/audit và trừ nguyên liệu đồng thời trong transaction tạo đơn. |
+
 | `backend/src/ingredients/entities/ingredient.entity.ts` | Tạo mới | Lưu tên, mã, đơn vị, tồn, ngưỡng cảnh báo và version nguyên liệu. |
+
 | `backend/src/ingredients/entities/ingredient-recipe.entity.ts` | Tạo mới | Lưu định lượng nguyên liệu cần cho mỗi sản phẩm. |
+
 | `backend/src/ingredients/entities/order-ingredient-consumption.entity.ts` | Tạo mới | Lưu snapshot nguyên liệu đã tiêu hao để có thể hoàn kho đúng một lần khi hủy đơn. |
+
 | `backend/src/ingredients/entities/ingredient-adjustment.entity.ts` | Tạo mới | Ghi người thao tác, lượng điều chỉnh, lý do và thời gian. |
+
 | `backend/src/ingredients/dto/create-ingredient.dto.ts` | Tạo mới | Validate dữ liệu tạo nguyên liệu. |
+
 | `backend/src/ingredients/dto/update-ingredient.dto.ts` | Tạo mới | Validate thông tin nguyên liệu được phép cập nhật. |
+
 | `backend/src/ingredients/dto/adjust-ingredient-stock.dto.ts` | Tạo mới | Validate lượng và lý do nhập/xuất kho. |
+
 | `backend/src/ingredients/dto/replace-product-recipe.dto.ts` | Tạo mới | Validate danh sách thành phần của công thức sản phẩm. |
+
 | `backend/src/ingredients/dto/create-topping.dto.ts` | Tạo mới | Validate topping mới và liên kết tới kho nguyên liệu dùng chung. |
+
 | `backend/src/orders/orders.module.ts` | Chỉnh sửa | Kết nối IngredientsModule với luồng đơn hàng. |
+
 | `backend/src/orders/orders.service.ts` | Chỉnh sửa | Lọc hàng đợi theo trạng thái lưu trữ; hỗ trợ nhân viên hủy đơn theo state machine; tích hợp trừ/hoàn tồn nguyên liệu theo transaction. |
+
 | `backend/src/orders/dto/staff-order-query.dto.ts` | Chỉnh sửa | Cho phép lọc các trạng thái đơn bao gồm `COMPLETED` và `CANCELLED`. |
+
 | `backend/src/orders/dto/change-order-status.dto.ts` | Chỉnh sửa | Cho phép gửi yêu cầu hủy đơn từ thao tác Staff; service vẫn kiểm tra quyền chuyển trạng thái. |
+
 | `backend/src/orders/orders.service.spec.ts` | Chỉnh sửa | Bổ sung kiểm tra unit cho phối hợp tạo đơn với dịch vụ nguyên liệu. |
+
 | `backend/test/task10.integration.e2e-spec.ts` | Chỉnh sửa | Kiểm tra PostgreSQL thật cho lịch sử đơn, hủy, recipe bắt buộc, audit và tranh chấp tồn nguyên liệu. |
+
 | `frontend/src/app/staff/login/page.tsx` | Tạo mới | Cổng đăng nhập nhân viên riêng, dùng Auth API/JWT và chặn CUSTOMER. |
+
 | `frontend/src/app/staff/login/page.test.tsx` | Tạo mới | Kiểm tra chuyển hướng STAFF, từ chối CUSTOMER và return URL an toàn. |
+
 | `frontend/src/app/staff/ingredients/page.tsx` | Tạo mới | Route `/staff/ingredients`. |
+
 | `frontend/src/components/staff-inventory-workspace.tsx` | Tạo mới | Giao diện bốn tab kho nguyên liệu/vật tư/topping và công thức; nhập/xuất qua cùng nguồn kho. |
+
 | `frontend/src/components/staff-ingredients-panel.tsx` | Chỉnh sửa | Giữ export component cũ để tương thích các route đang sử dụng. |
+
 | `frontend/src/components/staff-ingredients-panel.test.tsx` | Chỉnh sửa | Kiểm tra tách kho dùng chung khỏi công thức và luồng điều chỉnh kho. |
+
 | `frontend/src/components/staff-orders-panel.tsx` | Chỉnh sửa | Thêm bộ lọc đơn đã hoàn thành/đã hủy và nút hủy có xác nhận. |
+
 | `frontend/src/components/staff-orders-panel.test.tsx` | Tạo mới | Kiểm tra lọc trạng thái lưu trữ và gửi thao tác hủy Staff. |
+
 | `frontend/src/components/staff-shell.tsx` | Chỉnh sửa | Thêm điều hướng quản lý nguyên liệu và đưa phiên chưa đăng nhập tới Staff Login. |
+
 | `frontend/src/app/staff/layout.tsx` | Chỉnh sửa | Không bọc trang Staff Login trong StaffShell; các trang vận hành khác vẫn được bảo vệ. |
+
 | `frontend/src/app/staff/page.tsx` | Chỉnh sửa | Thêm lối tắt từ dashboard tới quản lý nguyên liệu. |
+
 | `frontend/src/app/login/page.tsx` | Chỉnh sửa | CUSTOMER mặc định về Menu, giữ return URL nội bộ hợp lệ và liên kết Staff Login. |
+
 | `frontend/src/app/login/page.test.tsx` | Chỉnh sửa | Kiểm tra mặc định Menu và giữ đường dẫn checkout cho CUSTOMER. |
+
 | `frontend/src/app/register/page.tsx` | Chỉnh sửa | Dùng Menu làm đích mặc định sau đăng ký/đăng nhập tiếp theo. |
+
 | `frontend/src/app/globals.css` | Chỉnh sửa | Tạo kiểu responsive cho trang Staff Login, kho nguyên liệu, BOM và các nút đơn hàng. |
+
 | `README.md` | Chỉnh sửa | Ghi nhận chức năng, API, migration, giới hạn và bảng file của đợt nâng cấp. |
 
 ## 5. Cài đặt và chạy dự án
@@ -161,7 +210,7 @@ Size/topping và catalog hiện dùng dữ liệu, quy tắc giá mẫu; cần �
 ### Yêu cầu
 
 - Git.
-- Node.js 24 (đúng phiên bản CI) và npm.
+- Node.js 24 và npm.
 - Docker Desktop có Docker Compose.
 
 ### Clone và cấu hình
@@ -169,22 +218,31 @@ Size/topping và catalog hiện dùng dữ liệu, quy tắc giá mẫu; cần �
 Mở PowerShell:
 
 ```powershell
+
 git clone https://github.com/quang-vu2808/brewlite.git
+
 Set-Location brewlite
+
 Copy-Item .env.example .env
+
 notepad .env
+
 ```
 
 Trong `.env`, thay `DB_PASSWORD` bằng mật khẩu local và `JWT_SECRET` bằng chuỗi bí mật riêng tối thiểu 32 byte. Có thể tạo chuỗi ngẫu nhiên URL-safe bằng Node.js:
 
 ```powershell
+
 node -e "console.log(require('crypto').randomBytes(48).toString('base64url'))"
+
 ```
 
 Không chia sẻ hoặc commit `.env`. Để cấu hình frontend, tạo `frontend/.env.local`:
 
 ```powershell
+
 Set-Content frontend/.env.local "NEXT_PUBLIC_API_URL=http://localhost:3001"
+
 ```
 
 ### Khởi động PostgreSQL
@@ -194,15 +252,21 @@ Từ thư mục gốc repository, sau khi đã điền `DB_PASSWORD` trong `.env
 Để chạy toàn bộ stack trong Docker:
 
 ```powershell
+
 docker compose up --build -d
+
 docker compose ps
+
 ```
 
 Sau khi các dịch vụ healthy, mở <http://localhost:3002>. API lắng nghe tại <http://localhost:3003>. Nếu chỉ muốn chạy Web/API bằng npm, khởi động riêng database:
 
 ```powershell
+
 docker compose up -d db
+
 docker compose ps
+
 ```
 
 Compose Task 9 tạo volume riêng `brewlite_task9_pgdata` và mặc định xuất bản PostgreSQL trên cổng `5433`, API trên `3003` và Web trên `3002`. Các cổng ứng dụng này tránh xung đột với tiến trình local thường dùng `3000/3001`; PostgreSQL/volume cũng tách biệt với database cũ ở cổng `5432`. Không dừng/xóa database hoặc volume cũ. Không dùng `docker compose down -v` để xử lý lỗi kết nối. Nếu volume Task 9 đã được khởi tạo, mật khẩu trong `.env` phải khớp; đổi biến môi trường không tự đổi mật khẩu trong database.
@@ -212,9 +276,13 @@ Compose Task 9 tạo volume riêng `brewlite_task9_pgdata` và mặc định xu�
 Mở một cửa sổ PowerShell tại thư mục gốc:
 
 ```powershell
+
 Set-Location backend
+
 npm ci
+
 npm run start:dev
+
 ```
 
 Khi API khởi động, TypeORM chạy các migration đã đăng ký. Không cần chạy lệnh tạo schema thủ công.
@@ -224,9 +292,13 @@ Khi API khởi động, TypeORM chạy các migration đã đăng ký. Không c�
 Mở một cửa sổ PowerShell khác tại thư mục gốc:
 
 ```powershell
+
 Set-Location frontend
+
 npm ci
+
 npm run dev
+
 ```
 
 - Web: <http://localhost:3000>
@@ -240,20 +312,35 @@ API local mặc định cho phép hai origin Web `http://localhost:3000` và `ht
 `.env.example` là mẫu cho file `.env` tại thư mục gốc. Dùng giá trị riêng cho máy/môi trường của bạn; không commit file `.env`.
 
 | Biến | Dùng bởi | Ý nghĩa |
+
 |---|---|---|
+
 | `DB_HOST` | API | Host PostgreSQL; khi chạy API trực tiếp trên máy thường là `localhost`. |
+
 | `DB_PORT` | API chạy trực tiếp | Cổng PostgreSQL trên máy host; mặc định mẫu là `5433` cho Compose Task 9. |
+
 | `DB_USER` | API | Tài khoản PostgreSQL; mặc định `brewlite`. |
+
 | `DB_PASSWORD` | Docker Compose, API | Mật khẩu PostgreSQL; bắt buộc. |
+
 | `DB_NAME` | API | Tên database; mặc định `brewlite`. |
+
 | `JWT_SECRET` | API | Khóa ký JWT, bắt buộc và tối thiểu 32 byte. |
+
 | `PORT` | API | Cổng NestJS; mặc định `3001`. |
+
 | `WEB_ORIGIN` | API | Danh sách origin trình duyệt được phép, phân cách bằng dấu phẩy. |
+
 | `PAYMENT_DEMO_ENABLED` | API | Mặc định `false`; chỉ khi bật `true` mới hiện và chấp nhận tùy chọn giả lập thanh toán thất bại. |
+
 | `NEXT_PUBLIC_API_URL` | Web chạy trực tiếp | URL API, đặt trong `frontend/.env.local`; mặc định `http://localhost:3001`. |
+
 | `NEXT_PUBLIC_API_URL_DOCKER` | Docker Compose build Web | URL API mà trình duyệt truy cập; mặc định `http://127.0.0.1:3003`. |
+
 | `DB_PUBLISHED_PORT` | Docker Compose | Cổng host xuất bản PostgreSQL; mặc định `5433`. |
+
 | `API_PUBLISHED_PORT` | Docker Compose | Cổng host xuất bản API; mặc định `3003`. |
+
 | `WEB_PUBLISHED_PORT` | Docker Compose | Cổng host xuất bản Web; mặc định `3002`. |
 
 Docker Compose đọc `DB_USER`, `DB_PASSWORD`, `DB_NAME` để khởi tạo PostgreSQL; API container dùng host nội bộ `db:5432`. Khi API chạy trực tiếp trên máy, `DB_HOST=localhost` và `DB_PORT` phải trỏ tới cổng được publish. `JWT_SECRET` không được đưa vào Web. Compose build Web với `NEXT_PUBLIC_API_URL_DOCKER`, là URL trình duyệt truy cập được, không phải hostname nội bộ Docker. Không đặt mật khẩu hoặc secret thật trong README, mã nguồn hay log.
@@ -263,42 +350,79 @@ Docker Compose đọc `DB_USER`, `DB_PASSWORD`, `DB_NAME` để khởi tạo Pos
 ## 7. Danh sách API
 
 | Method | Endpoint | Chức năng | Yêu cầu JWT |
+
 |---|---|---|---|
+
 | `GET` | `/products` | Lấy danh sách sản phẩm | Không |
+
 | `GET` | `/products/:id` | Lấy chi tiết sản phẩm; trả 404 nếu không tồn tại | Không |
+
 | `POST` | `/auth/register` | Đăng ký tài khoản | Không |
+
 | `POST` | `/auth/login` | Đăng nhập và nhận JWT | Không |
+
 | `GET` | `/auth/me` | Thông tin tài khoản và điểm thành viên hiện tại | Có |
+
 | `POST` | `/orders` | Tạo đơn từ các sản phẩm/tùy chọn; backend kiểm tra và tính lại giá | Có |
+
 | `POST` | `/orders/preview` | Xem trước giá và kiểm tra tổng nhu cầu nguyên liệu của giỏ; chỉ đọc tồn kho | Có |
+
 | `GET` | `/inventory` | Số ly tối đa theo công thức và tồn nguyên liệu; giữ các trường phản hồi cũ | Không |
+
 | `GET` | `/orders/me` | Lịch sử đơn hàng của tài khoản đang đăng nhập | Có |
+
 | `GET` | `/orders/:id` | Chi tiết đơn, chỉ chủ đơn mới xem được | Có |
+
 | `POST` | `/orders/:id/cancel` | Chủ đơn hủy đơn ở trạng thái được phép; hoàn kho một lần | Có |
+
 | `PATCH` | `/orders/:id/status` | Nhân viên chuyển trạng thái hoặc hủy đơn theo state machine | Có (vai trò `STAFF`) |
+
 | `GET` | `/orders/staff/queue` | Hàng đợi có lọc trạng thái/tìm mã và phân trang; hỗ trợ cả COMPLETED/CANCELLED | Có (vai trò `STAFF`) |
+
 | `GET` | `/orders/staff/summary` | Đếm đơn chờ pha chế, đang pha chế và sẵn sàng cho dashboard | Có (vai trò `STAFF`) |
+
 | `GET` | `/ingredients` | Xem kho nguyên liệu và cờ cảnh báo tồn thấp | Có (vai trò `STAFF`) |
+
 | `POST` | `/ingredients` | Tạo nguyên liệu | Có (vai trò `STAFF`) |
+
 | `PATCH` | `/ingredients/:id` | Cập nhật tên, mã, đơn vị hoặc ngưỡng cảnh báo | Có (vai trò `STAFF`) |
+
 | `POST` | `/ingredients/:id/adjustments` | Điều chỉnh tồn có lý do và ghi audit nhân viên | Có (vai trò `STAFF`) |
+
 | `GET` | `/ingredients/:id/adjustments` | Xem 20 điều chỉnh kho gần nhất | Có (vai trò `STAFF`) |
+
 | `GET` | `/ingredients/recipes` | Xem công thức theo sản phẩm | Có (vai trò `STAFF`) |
+
 | `PUT` | `/ingredients/recipes/:productId` | Thay thế công thức định lượng nguyên liệu cho sản phẩm | Có (vai trò `STAFF`) |
+
 | `PUT` | `/ingredients/recipes/:productId/:size` | Lưu công thức S/M/L ở trạng thái chờ xác nhận; danh sách rỗng xóa công thức size, không tự áp dụng công thức chung | Có (vai trò `STAFF`) |
+
 | `PATCH` | `/ingredients/recipes/:productId/:size/confirm` | Xác nhận công thức size hợp lệ để tính tồn và cho phép đặt | Có (vai trò `STAFF`) |
+
 | `PUT` | `/ingredients/packaging-recipes/:productId/:size` | Cấu hình vật tư đóng gói tiêu hao theo món/đơn/nhóm | Có (vai trò `STAFF`) |
+
 | `PUT` | `/ingredients/topping-recipes/:productId/:size` | Tương thích dữ liệu/quy tắc topping cũ; không cần cấu hình để dùng topping toàn menu | Có (vai trò `STAFF`) |
+
 | `GET` | `/toppings?productId=:id&size=S` | Danh mục topping đang bật, dùng chung cho mọi sản phẩm-size, giới hạn theo tồn kho | Không |
+
 | `GET` | `/toppings/staff` | Danh mục topping cho cấu hình nhân viên | Có (vai trò `STAFF`) |
+
 | `POST` | `/toppings` | Tạo danh mục topping liên kết tới một nguyên liệu kho dùng chung; topping mới mặc định tắt bán | Có (vai trò `STAFF`) |
+
 | `PATCH` | `/toppings/:id` | Cập nhật tên/giá/trạng thái và nguyên liệu kho được liên kết | Có (vai trò `STAFF`) |
+
 | `GET` | `/promotions` | Danh sách mã khuyến mãi còn hiệu lực | Không |
+
 | `GET` | `/promotions/staff` | Danh sách đầy đủ để quản lý khuyến mãi | Có (vai trò `STAFF`) |
+
 | `POST` | `/promotions` | Tạo mã khuyến mãi | Có (vai trò `STAFF`) |
+
 | `PATCH` | `/promotions/:code` | Cập nhật cấu hình mã khuyến mãi | Có (vai trò `STAFF`) |
+
 | `DELETE` | `/promotions/:code` | Ngừng sử dụng (soft-disable), giữ lịch sử đơn | Có (vai trò `STAFF`) |
+
 | `GET` | `/payments/config` | Cấu hình demo công khai; không chứa bí mật | Không |
+
 | `POST` | `/payments` | Thanh toán mô phỏng qua provider interface, idempotency và cộng điểm | Có |
 
 `POST /orders` nhận `items`, `promoCode` và `redeemPoints` tùy chọn. Giá, tồn kho, số dư điểm, tính hợp lệ/lượt dùng mã đều được backend xác minh; tổng tiền client không được dùng. Mỗi điểm đổi giảm 100 VND, điểm bị giữ trong cùng transaction với việc tạo đơn và được hoàn khi hủy đơn. Điểm thưởng chỉ được cộng sau khi thanh toán mô phỏng thành công. Mã mẫu được seed bằng migration: `BREW10` giảm 10% (đơn tối thiểu 20.000 VND, giảm tối đa 15.000 VND) và `WELCOME5000` giảm 5.000 VND (đơn tối thiểu 30.000 VND).
@@ -316,19 +440,33 @@ Topping liên kết trực tiếp tới một nguyên liệu làm nguồn tồn 
 Ví dụ response thanh toán thành công:
 
 ```json
+
 {
+
   "paymentId": "UUID",
+
   "orderId": "UUID",
+
   "method": "WALLET",
+
   "status": "SUCCESS",
+
   "orderStatus": "PAID",
+
   "amount": 75000,
+
   "loyaltyPoints": 75,
+
   "pointsEarned": 75,
+
   "message": "Thanh toán mô phỏng thành công",
+
   "provider": "MOCK",
+
   "qrPayload": "BREWLITE-DEMO://wallet?..."
+
 }
+
 ```
 
 Khi mock thất bại, response có `status: "FAILED"` và `orderStatus: "PAYMENT_FAILED"`; đây là kết quả mô phỏng trả HTTP 201, không phải lỗi HTTP. `paymentId` và `orderId` thực tế là UUID do hệ thống tạo/lưu.
@@ -357,46 +495,74 @@ Schema Task 10 được mở rộng bằng migration `1710000003000-Task10Busine
 
 ## 9. Kiểm thử và chất lượng mã nguồn
 
+**Kiểm tra sau khi chuyển cấu trúc thư mục (15/11/2026):** `docker compose build` thành công cho API và Web; `docker compose up -d --wait` báo ba dịch vụ PostgreSQL, API, Web đều `healthy`. HTTP GET `http://localhost:3002/` và `http://localhost:3003/products` đều trả `200`. Khi chạy `npm run test:e2e -- --runInBand` trong `backend/`, có **1 bài test đạt, 23 bài test bị bỏ qua có điều kiện**, không có bài test thất bại. Chưa chạy lại toàn bộ unit tests hoặc integration tests trên database test riêng trong đợt chuyển thư mục này.
+
 Chạy lệnh trong đúng thư mục ứng dụng; repository không định nghĩa script npm chung ở thư mục gốc.
 
 ### Frontend
 
 ```powershell
+
 Set-Location frontend
+
 npm run lint
+
 npm run test -- --run
+
 npx tsc --noEmit
+
 npm run build
+
 ```
 
 ### Backend
 
 ```powershell
+
 Set-Location backend
+
 npx tsc --noEmit
+
 npm run lint
+
 npm run test -- --runInBand
+
 npm run test:e2e -- --runInBand
+
 npm run build
+
 ```
 
 `test:e2e` chạy các kiểm thử PostgreSQL thật khi bật rõ ràng `TEST_DB_ALLOW_MUTATIONS=1` và cung cấp `TEST_DB_NAME`/`TEST_DB_PASSWORD`; nếu thiếu các biến này, suite tích hợp được skip an toàn. Dùng database test riêng, không trỏ suite vào database có dữ liệu cần giữ. Ví dụ tạo PostgreSQL tạm không gắn volume:
 
 ```powershell
+
 $testPassword = [guid]::NewGuid().ToString("N")
+
 docker run --rm -d --name brewlite-feature-test-db `
+
   -e POSTGRES_USER=task10 `
+
   -e POSTGRES_PASSWORD=$testPassword `
+
   -e POSTGRES_DB=brewlite_task10_test `
+
   -p 127.0.0.1:55433:5432 postgres:17
 
 $env:TEST_DB_ALLOW_MUTATIONS = "1"
+
 $env:TEST_DB_HOST = "127.0.0.1"
+
 $env:TEST_DB_PORT = "55433"
+
 $env:TEST_DB_USER = "task10"
+
 $env:TEST_DB_PASSWORD = $testPassword
+
 $env:TEST_DB_NAME = "brewlite_task10_test"
+
 npm run test:e2e -- --runInBand
+
 ```
 
 Chờ PostgreSQL sẵn sàng bằng `docker exec brewlite-feature-test-db pg_isready -U task10 -d brewlite_task10_test`. Sau khi chạy xong, dừng riêng container test bằng `docker stop brewlite-feature-test-db`; `--rm` sẽ dọn container tạm, không có Docker volume. Không dùng database/volume phát triển để chạy integration test.
@@ -404,14 +570,16 @@ Chờ PostgreSQL sẵn sàng bằng `docker exec brewlite-feature-test-db pg_isr
 Để bật checkbox giả lập thanh toán thất bại cục bộ, đặt biến trong `.env`:
 
 ```powershell
+
 $env:PAYMENT_DEMO_ENABLED = "true"
+
 Set-Location backend
+
 npm run start:dev
+
 ```
 
 Mặc định `PAYMENT_DEMO_ENABLED=false`; backend từ chối payload giả lập thất bại nếu cấu hình đang tắt. Thanh toán vẫn dùng mock provider và không thu tiền thật. QR chỉ là dữ liệu demo, không thể dùng để thanh toán ngân hàng.
-
-CI tại `.github/workflows/ci.yml` chạy khi có pull request vào `main`. Hai job Web và API lần lượt cài dependencies bằng `npm ci`, chạy lint, unit test và build với Node.js 24. CI không chạy integration test cần PostgreSQL riêng; chạy suite này theo hướng dẫn ở trên.
 
 Trước Task 9, Web lint, TypeScript và build đạt; **14/14** unit tests trong 4 file đạt. API lint, TypeScript và build đạt; **37/37** unit tests trong 8 suite đạt. Kiểm tra trực tiếp trên PostgreSQL 17 cho Task 8 xác nhận migration và bảng `payments`; đã thử Wallet/Card thành công, mock thất bại, DTO/method sai, JWT thiếu/sai, đơn không tồn tại/không thuộc user/đã PAID, số tiền gửi thêm bị từ chối, request đồng thời cho kết quả HTTP `201` và `409`, và rollback khi cố ý làm lỗi bước cập nhật đơn. Dữ liệu user/order tạo riêng cho kiểm tra đã được xóa sau đó; dữ liệu trước đó được giữ nguyên.
 
@@ -430,16 +598,27 @@ Kiểm tra yêu cầu topping toàn menu: cấu hình topping đã bật tại K
 ## 10. Tiến độ Assignment 1
 
 | Task | Hạng mục | Tiến độ |
+
 |---|---|---|
+
 | 1 | Khởi tạo dự án | Đã triển khai |
+
 | 2 | API sản phẩm | Đã triển khai |
+
 | 3 | Trang Menu | Đã triển khai |
+
 | 4 | Chi tiết và tùy chọn sản phẩm | Đã triển khai |
+
 | 5 | Giỏ hàng | Đã triển khai |
+
 | 6 | API tạo đơn hàng | Đã triển khai |
+
 | 7 | Đăng ký, đăng nhập và bảo vệ API | Đã triển khai; Staff có cổng `/staff/login`, Customer mặc định về Menu và giữ đường dẫn checkout hợp lệ |
+
 | 8 | Thanh toán mock | Đã triển khai; kiểm tra kết quả test ở mục 9 |
+
 | 9 | Xác nhận, lịch sử đơn và bàn giao | API/UI lịch sử và chi tiết đã triển khai, smoke-test đạt; bàn giao chưa triển khai |
+
 | 10 | Nghiệp vụ Backend nâng cao | Đã triển khai state machine, idempotency PostgreSQL, inventory optimistic versioning, promotion và loyalty; unit/integration test đạt. |
 
 Trạng thái phản ánh tính năng có trong mã nguồn và không xác nhận triển khai production. Xem thêm ghi chú giới hạn ở [mục 11](#11-các-giới-hạn-hiện-tại).
