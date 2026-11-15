@@ -113,47 +113,47 @@ Size/topping và catalog hiện dùng dữ liệu, quy tắc giá mẫu; cần �
 
 | Đường dẫn | Thay đổi | Tác dụng |
 |---|---|---|
-| `apps/api/src/app.module.ts` | Chỉnh sửa | Đăng ký entity, migration và module nguyên liệu với TypeORM/NestJS. |
-| `apps/api/src/database/migrations/1710000005000-CreateIngredientInventory.ts` | Tạo mới | Tạo bảng nguyên liệu, recipe, tiêu hao theo đơn và audit điều chỉnh; thêm dữ liệu mẫu ban đầu. |
-| `apps/api/src/database/migrations/1710000007000-RecipesPackagingAndToppings.ts` | Tạo mới | Mở rộng kho dùng chung, công thức size, vật tư và danh mục topping, không seed định lượng/tồn mới. |
-| `apps/api/src/database/migrations/1710000008000-EnsureProductToppingRecipes.ts` | Tạo mới | Khôi phục an toàn bảng công thức topping nếu migration trước đã được ghi nhận nhưng thiếu bảng. |
-| `apps/api/src/database/migrations/1710000009000-SharedToppingPortionQuantity.ts` | Tạo mới | Lưu định lượng mỗi phần topping trong danh mục topping. |
-| `apps/api/src/database/migrations/1710000010000-LinkExistingToppingsToIngredients.ts` | Tạo mới | Tái sử dụng hoặc thêm kho nguyên liệu topping với tồn 0, rồi liên kết catalog hiện có mà không đổi giá/định lượng. |
-| `apps/api/src/database/migrations/1710000011000-UseSharedToppingPortionInConstraint.ts` | Tạo mới | Sửa điều kiện bật bán topping để phù hợp với định lượng chung hiện hành. |
-| `apps/api/src/ingredients/ingredients.module.ts` | Tạo mới | Khai báo module quản lý nguyên liệu và các entity liên quan. |
-| `apps/api/src/ingredients/ingredients.controller.ts` | Tạo mới | Cung cấp API kho, cập nhật thông tin, audit và công thức; bảo vệ bằng JWT/StaffGuard. |
-| `apps/api/src/ingredients/toppings.controller.ts` | Tạo mới | Tạo/cập nhật danh mục topping và cung cấp topping khả dụng cho khách; staff routes được bảo vệ. |
-| `apps/api/src/ingredients/ingredients.service.ts` | Tạo mới | Xử lý tồn/công thức/audit và trừ nguyên liệu đồng thời trong transaction tạo đơn. |
-| `apps/api/src/ingredients/entities/ingredient.entity.ts` | Tạo mới | Lưu tên, mã, đơn vị, tồn, ngưỡng cảnh báo và version nguyên liệu. |
-| `apps/api/src/ingredients/entities/ingredient-recipe.entity.ts` | Tạo mới | Lưu định lượng nguyên liệu cần cho mỗi sản phẩm. |
-| `apps/api/src/ingredients/entities/order-ingredient-consumption.entity.ts` | Tạo mới | Lưu snapshot nguyên liệu đã tiêu hao để có thể hoàn kho đúng một lần khi hủy đơn. |
-| `apps/api/src/ingredients/entities/ingredient-adjustment.entity.ts` | Tạo mới | Ghi người thao tác, lượng điều chỉnh, lý do và thời gian. |
-| `apps/api/src/ingredients/dto/create-ingredient.dto.ts` | Tạo mới | Validate dữ liệu tạo nguyên liệu. |
-| `apps/api/src/ingredients/dto/update-ingredient.dto.ts` | Tạo mới | Validate thông tin nguyên liệu được phép cập nhật. |
-| `apps/api/src/ingredients/dto/adjust-ingredient-stock.dto.ts` | Tạo mới | Validate lượng và lý do nhập/xuất kho. |
-| `apps/api/src/ingredients/dto/replace-product-recipe.dto.ts` | Tạo mới | Validate danh sách thành phần của công thức sản phẩm. |
-| `apps/api/src/ingredients/dto/create-topping.dto.ts` | Tạo mới | Validate topping mới và liên kết tới kho nguyên liệu dùng chung. |
-| `apps/api/src/orders/orders.module.ts` | Chỉnh sửa | Kết nối IngredientsModule với luồng đơn hàng. |
-| `apps/api/src/orders/orders.service.ts` | Chỉnh sửa | Lọc hàng đợi theo trạng thái lưu trữ; hỗ trợ nhân viên hủy đơn theo state machine; tích hợp trừ/hoàn tồn nguyên liệu theo transaction. |
-| `apps/api/src/orders/dto/staff-order-query.dto.ts` | Chỉnh sửa | Cho phép lọc các trạng thái đơn bao gồm `COMPLETED` và `CANCELLED`. |
-| `apps/api/src/orders/dto/change-order-status.dto.ts` | Chỉnh sửa | Cho phép gửi yêu cầu hủy đơn từ thao tác Staff; service vẫn kiểm tra quyền chuyển trạng thái. |
-| `apps/api/src/orders/orders.service.spec.ts` | Chỉnh sửa | Bổ sung kiểm tra unit cho phối hợp tạo đơn với dịch vụ nguyên liệu. |
-| `apps/api/test/task10.integration.e2e-spec.ts` | Chỉnh sửa | Kiểm tra PostgreSQL thật cho lịch sử đơn, hủy, recipe bắt buộc, audit và tranh chấp tồn nguyên liệu. |
-| `apps/web/src/app/staff/login/page.tsx` | Tạo mới | Cổng đăng nhập nhân viên riêng, dùng Auth API/JWT và chặn CUSTOMER. |
-| `apps/web/src/app/staff/login/page.test.tsx` | Tạo mới | Kiểm tra chuyển hướng STAFF, từ chối CUSTOMER và return URL an toàn. |
-| `apps/web/src/app/staff/ingredients/page.tsx` | Tạo mới | Route `/staff/ingredients`. |
-| `apps/web/src/components/staff-inventory-workspace.tsx` | Tạo mới | Giao diện bốn tab kho nguyên liệu/vật tư/topping và công thức; nhập/xuất qua cùng nguồn kho. |
-| `apps/web/src/components/staff-ingredients-panel.tsx` | Chỉnh sửa | Giữ export component cũ để tương thích các route đang sử dụng. |
-| `apps/web/src/components/staff-ingredients-panel.test.tsx` | Chỉnh sửa | Kiểm tra tách kho dùng chung khỏi công thức và luồng điều chỉnh kho. |
-| `apps/web/src/components/staff-orders-panel.tsx` | Chỉnh sửa | Thêm bộ lọc đơn đã hoàn thành/đã hủy và nút hủy có xác nhận. |
-| `apps/web/src/components/staff-orders-panel.test.tsx` | Tạo mới | Kiểm tra lọc trạng thái lưu trữ và gửi thao tác hủy Staff. |
-| `apps/web/src/components/staff-shell.tsx` | Chỉnh sửa | Thêm điều hướng quản lý nguyên liệu và đưa phiên chưa đăng nhập tới Staff Login. |
-| `apps/web/src/app/staff/layout.tsx` | Chỉnh sửa | Không bọc trang Staff Login trong StaffShell; các trang vận hành khác vẫn được bảo vệ. |
-| `apps/web/src/app/staff/page.tsx` | Chỉnh sửa | Thêm lối tắt từ dashboard tới quản lý nguyên liệu. |
-| `apps/web/src/app/login/page.tsx` | Chỉnh sửa | CUSTOMER mặc định về Menu, giữ return URL nội bộ hợp lệ và liên kết Staff Login. |
-| `apps/web/src/app/login/page.test.tsx` | Chỉnh sửa | Kiểm tra mặc định Menu và giữ đường dẫn checkout cho CUSTOMER. |
-| `apps/web/src/app/register/page.tsx` | Chỉnh sửa | Dùng Menu làm đích mặc định sau đăng ký/đăng nhập tiếp theo. |
-| `apps/web/src/app/globals.css` | Chỉnh sửa | Tạo kiểu responsive cho trang Staff Login, kho nguyên liệu, BOM và các nút đơn hàng. |
+| `backend/src/app.module.ts` | Chỉnh sửa | Đăng ký entity, migration và module nguyên liệu với TypeORM/NestJS. |
+| `backend/src/database/migrations/1710000005000-CreateIngredientInventory.ts` | Tạo mới | Tạo bảng nguyên liệu, recipe, tiêu hao theo đơn và audit điều chỉnh; thêm dữ liệu mẫu ban đầu. |
+| `backend/src/database/migrations/1710000007000-RecipesPackagingAndToppings.ts` | Tạo mới | Mở rộng kho dùng chung, công thức size, vật tư và danh mục topping, không seed định lượng/tồn mới. |
+| `backend/src/database/migrations/1710000008000-EnsureProductToppingRecipes.ts` | Tạo mới | Khôi phục an toàn bảng công thức topping nếu migration trước đã được ghi nhận nhưng thiếu bảng. |
+| `backend/src/database/migrations/1710000009000-SharedToppingPortionQuantity.ts` | Tạo mới | Lưu định lượng mỗi phần topping trong danh mục topping. |
+| `backend/src/database/migrations/1710000010000-LinkExistingToppingsToIngredients.ts` | Tạo mới | Tái sử dụng hoặc thêm kho nguyên liệu topping với tồn 0, rồi liên kết catalog hiện có mà không đổi giá/định lượng. |
+| `backend/src/database/migrations/1710000011000-UseSharedToppingPortionInConstraint.ts` | Tạo mới | Sửa điều kiện bật bán topping để phù hợp với định lượng chung hiện hành. |
+| `backend/src/ingredients/ingredients.module.ts` | Tạo mới | Khai báo module quản lý nguyên liệu và các entity liên quan. |
+| `backend/src/ingredients/ingredients.controller.ts` | Tạo mới | Cung cấp API kho, cập nhật thông tin, audit và công thức; bảo vệ bằng JWT/StaffGuard. |
+| `backend/src/ingredients/toppings.controller.ts` | Tạo mới | Tạo/cập nhật danh mục topping và cung cấp topping khả dụng cho khách; staff routes được bảo vệ. |
+| `backend/src/ingredients/ingredients.service.ts` | Tạo mới | Xử lý tồn/công thức/audit và trừ nguyên liệu đồng thời trong transaction tạo đơn. |
+| `backend/src/ingredients/entities/ingredient.entity.ts` | Tạo mới | Lưu tên, mã, đơn vị, tồn, ngưỡng cảnh báo và version nguyên liệu. |
+| `backend/src/ingredients/entities/ingredient-recipe.entity.ts` | Tạo mới | Lưu định lượng nguyên liệu cần cho mỗi sản phẩm. |
+| `backend/src/ingredients/entities/order-ingredient-consumption.entity.ts` | Tạo mới | Lưu snapshot nguyên liệu đã tiêu hao để có thể hoàn kho đúng một lần khi hủy đơn. |
+| `backend/src/ingredients/entities/ingredient-adjustment.entity.ts` | Tạo mới | Ghi người thao tác, lượng điều chỉnh, lý do và thời gian. |
+| `backend/src/ingredients/dto/create-ingredient.dto.ts` | Tạo mới | Validate dữ liệu tạo nguyên liệu. |
+| `backend/src/ingredients/dto/update-ingredient.dto.ts` | Tạo mới | Validate thông tin nguyên liệu được phép cập nhật. |
+| `backend/src/ingredients/dto/adjust-ingredient-stock.dto.ts` | Tạo mới | Validate lượng và lý do nhập/xuất kho. |
+| `backend/src/ingredients/dto/replace-product-recipe.dto.ts` | Tạo mới | Validate danh sách thành phần của công thức sản phẩm. |
+| `backend/src/ingredients/dto/create-topping.dto.ts` | Tạo mới | Validate topping mới và liên kết tới kho nguyên liệu dùng chung. |
+| `backend/src/orders/orders.module.ts` | Chỉnh sửa | Kết nối IngredientsModule với luồng đơn hàng. |
+| `backend/src/orders/orders.service.ts` | Chỉnh sửa | Lọc hàng đợi theo trạng thái lưu trữ; hỗ trợ nhân viên hủy đơn theo state machine; tích hợp trừ/hoàn tồn nguyên liệu theo transaction. |
+| `backend/src/orders/dto/staff-order-query.dto.ts` | Chỉnh sửa | Cho phép lọc các trạng thái đơn bao gồm `COMPLETED` và `CANCELLED`. |
+| `backend/src/orders/dto/change-order-status.dto.ts` | Chỉnh sửa | Cho phép gửi yêu cầu hủy đơn từ thao tác Staff; service vẫn kiểm tra quyền chuyển trạng thái. |
+| `backend/src/orders/orders.service.spec.ts` | Chỉnh sửa | Bổ sung kiểm tra unit cho phối hợp tạo đơn với dịch vụ nguyên liệu. |
+| `backend/test/task10.integration.e2e-spec.ts` | Chỉnh sửa | Kiểm tra PostgreSQL thật cho lịch sử đơn, hủy, recipe bắt buộc, audit và tranh chấp tồn nguyên liệu. |
+| `frontend/src/app/staff/login/page.tsx` | Tạo mới | Cổng đăng nhập nhân viên riêng, dùng Auth API/JWT và chặn CUSTOMER. |
+| `frontend/src/app/staff/login/page.test.tsx` | Tạo mới | Kiểm tra chuyển hướng STAFF, từ chối CUSTOMER và return URL an toàn. |
+| `frontend/src/app/staff/ingredients/page.tsx` | Tạo mới | Route `/staff/ingredients`. |
+| `frontend/src/components/staff-inventory-workspace.tsx` | Tạo mới | Giao diện bốn tab kho nguyên liệu/vật tư/topping và công thức; nhập/xuất qua cùng nguồn kho. |
+| `frontend/src/components/staff-ingredients-panel.tsx` | Chỉnh sửa | Giữ export component cũ để tương thích các route đang sử dụng. |
+| `frontend/src/components/staff-ingredients-panel.test.tsx` | Chỉnh sửa | Kiểm tra tách kho dùng chung khỏi công thức và luồng điều chỉnh kho. |
+| `frontend/src/components/staff-orders-panel.tsx` | Chỉnh sửa | Thêm bộ lọc đơn đã hoàn thành/đã hủy và nút hủy có xác nhận. |
+| `frontend/src/components/staff-orders-panel.test.tsx` | Tạo mới | Kiểm tra lọc trạng thái lưu trữ và gửi thao tác hủy Staff. |
+| `frontend/src/components/staff-shell.tsx` | Chỉnh sửa | Thêm điều hướng quản lý nguyên liệu và đưa phiên chưa đăng nhập tới Staff Login. |
+| `frontend/src/app/staff/layout.tsx` | Chỉnh sửa | Không bọc trang Staff Login trong StaffShell; các trang vận hành khác vẫn được bảo vệ. |
+| `frontend/src/app/staff/page.tsx` | Chỉnh sửa | Thêm lối tắt từ dashboard tới quản lý nguyên liệu. |
+| `frontend/src/app/login/page.tsx` | Chỉnh sửa | CUSTOMER mặc định về Menu, giữ return URL nội bộ hợp lệ và liên kết Staff Login. |
+| `frontend/src/app/login/page.test.tsx` | Chỉnh sửa | Kiểm tra mặc định Menu và giữ đường dẫn checkout cho CUSTOMER. |
+| `frontend/src/app/register/page.tsx` | Chỉnh sửa | Dùng Menu làm đích mặc định sau đăng ký/đăng nhập tiếp theo. |
+| `frontend/src/app/globals.css` | Chỉnh sửa | Tạo kiểu responsive cho trang Staff Login, kho nguyên liệu, BOM và các nút đơn hàng. |
 | `README.md` | Chỉnh sửa | Ghi nhận chức năng, API, migration, giới hạn và bảng file của đợt nâng cấp. |
 
 ## 5. Cài đặt và chạy dự án
@@ -181,10 +181,10 @@ Trong `.env`, thay `DB_PASSWORD` bằng mật khẩu local và `JWT_SECRET` bằ
 node -e "console.log(require('crypto').randomBytes(48).toString('base64url'))"
 ```
 
-Không chia sẻ hoặc commit `.env`. Để cấu hình frontend, tạo `apps/web/.env.local`:
+Không chia sẻ hoặc commit `.env`. Để cấu hình frontend, tạo `frontend/.env.local`:
 
 ```powershell
-Set-Content apps/web/.env.local "NEXT_PUBLIC_API_URL=http://localhost:3001"
+Set-Content frontend/.env.local "NEXT_PUBLIC_API_URL=http://localhost:3001"
 ```
 
 ### Khởi động PostgreSQL
@@ -212,7 +212,7 @@ Compose Task 9 tạo volume riêng `brewlite_task9_pgdata` và mặc định xu�
 Mở một cửa sổ PowerShell tại thư mục gốc:
 
 ```powershell
-Set-Location apps/api
+Set-Location backend
 npm ci
 npm run start:dev
 ```
@@ -224,7 +224,7 @@ Khi API khởi động, TypeORM chạy các migration đã đăng ký. Không c�
 Mở một cửa sổ PowerShell khác tại thư mục gốc:
 
 ```powershell
-Set-Location apps/web
+Set-Location frontend
 npm ci
 npm run dev
 ```
@@ -250,7 +250,7 @@ API local mặc định cho phép hai origin Web `http://localhost:3000` và `ht
 | `PORT` | API | Cổng NestJS; mặc định `3001`. |
 | `WEB_ORIGIN` | API | Danh sách origin trình duyệt được phép, phân cách bằng dấu phẩy. |
 | `PAYMENT_DEMO_ENABLED` | API | Mặc định `false`; chỉ khi bật `true` mới hiện và chấp nhận tùy chọn giả lập thanh toán thất bại. |
-| `NEXT_PUBLIC_API_URL` | Web chạy trực tiếp | URL API, đặt trong `apps/web/.env.local`; mặc định `http://localhost:3001`. |
+| `NEXT_PUBLIC_API_URL` | Web chạy trực tiếp | URL API, đặt trong `frontend/.env.local`; mặc định `http://localhost:3001`. |
 | `NEXT_PUBLIC_API_URL_DOCKER` | Docker Compose build Web | URL API mà trình duyệt truy cập; mặc định `http://127.0.0.1:3003`. |
 | `DB_PUBLISHED_PORT` | Docker Compose | Cổng host xuất bản PostgreSQL; mặc định `5433`. |
 | `API_PUBLISHED_PORT` | Docker Compose | Cổng host xuất bản API; mặc định `3003`. |
@@ -362,7 +362,7 @@ Chạy lệnh trong đúng thư mục ứng dụng; repository không định ng
 ### Frontend
 
 ```powershell
-Set-Location apps/web
+Set-Location frontend
 npm run lint
 npm run test -- --run
 npx tsc --noEmit
@@ -372,7 +372,7 @@ npm run build
 ### Backend
 
 ```powershell
-Set-Location apps/api
+Set-Location backend
 npx tsc --noEmit
 npm run lint
 npm run test -- --runInBand
@@ -405,7 +405,7 @@ Chờ PostgreSQL sẵn sàng bằng `docker exec brewlite-feature-test-db pg_isr
 
 ```powershell
 $env:PAYMENT_DEMO_ENABLED = "true"
-Set-Location apps/api
+Set-Location backend
 npm run start:dev
 ```
 
